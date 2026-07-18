@@ -7,9 +7,11 @@ type Props = {
   onClose: () => void
 }
 
+const defaultSiteUrl = 'https://rrrrbook.netlify.app'
+
 function getEmailRedirectUrl() {
   const configuredSiteUrl = import.meta.env.VITE_SITE_URL?.trim()
-  const siteUrl = configuredSiteUrl || window.location.origin
+  const siteUrl = configuredSiteUrl || defaultSiteUrl
   return `${siteUrl.replace(/\/$/, '')}/`
 }
 
