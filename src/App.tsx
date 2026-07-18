@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
+import { AdminPage } from '@/pages/AdminPage'
 import { FeedPage } from '@/pages/FeedPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 
@@ -23,6 +24,7 @@ export default function App() {
           path="/me"
           element={<ProfilePage onLogin={() => setAuthRequestKey((value) => value + 1)} />}
         />
+        <Route path="/admin" element={<AdminPage />} />
       </Routes>
     </AppShell>
   )
