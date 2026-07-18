@@ -7,6 +7,7 @@ type Props = {
   note: Note
   userId?: string
   onRequireAuth: () => void
+  onOpen: (note: Note) => void
 }
 
 function formatCount(value: number) {
@@ -15,38 +16,32 @@ function formatCount(value: number) {
   return String(value)
 }
 
-export function NoteCard({ note, userId, onRequireAuth }: Props) {
+export function NoteCard({ note, userId, onRequireAuth, onOpen }: Props) {
   const [liked, setLiked] = useState(Boolean(note.viewer_liked))
   const [favorited, setFavorited] = useState(Boolean(note.viewer_favorited))
   const [likeCount, setLikeCount] = useState(note.like_count)
 
   async function handleLike() {
-    if (!userId) {
-      onRequireAuth()
-      return
-    }
-    const next = !liked
-    setLiked(next)
-    setLikeCount((count) => count + (next ? 1 : -1))
+    if (!userId) return onRequireAuth()
+    const previous = liked
+    setLiked(!previous)
+    setLikeCount((count) => count + (previous ? -1 : 1))
     try {
-      await toggleLike(note.id, userId, liked)
+      await toggleLike(note.id, userId, previous)
     } catch {
-      setLiked(!next)
-      setLikeCount((count) => count + (next ? -1 : 1))
+      setLiked(previous)
+      setLikeCount((count) => count + (previous ? 1 : -1))
     }
   }
 
   async function handleFavorite() {
-    if (!userId) {
-      onRequireAuth()
-      return
-    }
-    const next = !favorited
-    setFavorited(next)
+    if (!userId) return onRequireAuth()
+    const previous = favorited
+    setFavorited(!previous)
     try {
-      await toggleFavorite(note.id, userId, favorited)
+      await toggleFavorite(note.id, userId, previous)
     } catch {
-      setFavorited(!next)
+      setFavorited(previous)
     }
   }
 
@@ -54,17 +49,17 @@ export function NoteCard({ note, userId, onRequireAuth }: Props) {
 
   return (
     <article className="note-card">
-      <button className="cover-button" aria-label={`查看：${note.title}`}>
+      <button className="cover-button" aria-label={`查看：${note.title}`} onClick={() => onOpen({ ...note, viewer_liked: liked, viewer_favorited: favorited, like_count: likeCount })}>
         {cover ? <img src={cover} alt={note.title} loading="lazy" /> : <div className="cover-placeholder" />}
         <span className="cover-gradient" />
       </button>
       <div className="note-body">
-        <h3>{note.title}</h3>
+        <button className="note-title-button" onClick={() => onOpen({ ...note, viewer_liked: liked, viewer_favorited: favorited, like_count: likeCount })}><h3>{note.title}</h3></button>
         <div className="tag-line">
           {note.tags.slice(0, 2).map((tag) => <span key={tag}>#{tag}</span>)}
         </div>
         <footer className="note-footer">
-          <button className="author-chip">
+          <button className="author-chip" onClick={() => onOpen(note)}>
             {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
             <em>{note.author.display_name}</em>
           </button>
@@ -73,7 +68,7 @@ export function NoteCard({ note, userId, onRequireAuth }: Props) {
               <Heart size={17} fill={liked ? 'currentColor' : 'none'} />
               <span>{formatCount(likeCount)}</span>
             </button>
-            <button aria-label="评论">
+            <button aria-label="评论" onClick={() => onOpen(note)}>
               <MessageCircle size={17} />
               <span>{formatCount(note.comment_count)}</span>
             </button>
