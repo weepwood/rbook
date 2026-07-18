@@ -1,0 +1,28 @@
+name: Bootstrap source
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bootstrap.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore source tree
+        run: |
+          cat .bootstrap/archive.part* | base64 -d > /tmp/rbook-src.tar.gz
+          rm -rf .bootstrap
+          tar -xzf /tmp/rbook-src.tar.gz
+          rm -f .github/workflows/bootstrap.yml
+      - name: Commit source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: build RBook social discovery platform"
+          git push
