@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bell, Compass, Home, LogOut, Menu, Plus, Search, UserRound, X } from 'lucide-react'
+import { Bell, Compass, Home, LogOut, Menu, Plus, Search, ShieldCheck, UserRound, X } from 'lucide-react'
 import { NavLink, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { useAccessTracking } from '@/hooks/useAccessTracking'
 import { AuthModal } from '@/components/AuthModal'
 import { ComposerModal } from '@/components/ComposerModal'
+import { NotificationPanel } from '@/components/NotificationPanel'
 
 type Props = {
   children: ReactNode
@@ -12,13 +14,15 @@ type Props = {
 }
 
 export function AppShell({ children, onRefresh, authRequestKey }: Props) {
-  const { user, signOut, configured } = useAuth()
+  const { user, profile, signOut, configured, isAdmin, accountState } = useAuth()
   const [authOpen, setAuthOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
+  const [notificationOpen, setNotificationOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
+  useAccessTracking()
 
   useEffect(() => {
     if (authRequestKey > 0) setAuthOpen(true)
@@ -37,11 +41,22 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
     setComposerOpen(true)
   }
 
+  function openNotifications() {
+    if (!user) {
+      setAuthOpen(true)
+      return
+    }
+    setNotificationOpen((open) => !open)
+  }
+
   const navItems = [
     { to: '/', label: '首页', icon: Home },
     { to: '/explore', label: '发现', icon: Compass },
     { to: '/me', label: '我的', icon: UserRound },
+    ...(isAdmin ? [{ to: '/admin', label: '管理后台', icon: ShieldCheck }] : []),
   ]
+
+  const displayName = profile?.display_name || user?.user_metadata?.display_name || user?.email || 'R'
 
   return (
     <div className="app">
@@ -59,11 +74,11 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
           {search && <button type="button" onClick={() => setSearch('')} aria-label="清空"><X size={16} /></button>}
         </form>
         <div className="top-actions">
-          <button className="icon-button" aria-label="通知"><Bell size={20} /></button>
+          <button className={`icon-button ${notificationOpen ? 'active' : ''}`} aria-label="通知" onClick={openNotifications}><Bell size={20} /></button>
           <button className="publish-button" onClick={openComposer}><Plus size={18} />发布</button>
           {user ? (
             <button className="avatar-button" onClick={() => navigate('/me')} aria-label="个人主页">
-              {(user.user_metadata?.display_name || user.email || 'R').slice(0, 1).toUpperCase()}
+              {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : displayName.slice(0, 1).toUpperCase()}
             </button>
           ) : (
             <button className="login-button" onClick={() => setAuthOpen(true)}>登录</button>
@@ -82,9 +97,10 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
           ))}
         </nav>
         <div className="sidebar-spacer" />
+        {accountState === 'disabled' && <div className="account-disabled-note"><strong>账号已停用</strong><span>当前账号不能发布、评论或互动，请联系管理员。</span></div>}
         <div className="sidebar-note">
           <strong>{configured ? 'Supabase 已连接' : '演示模式'}</strong>
-          <span>{configured ? '认证、数据与图片存储已启用' : '配置环境变量后切换真实数据'}</span>
+          <span>{configured ? '认证、社区互动、日志与图片存储已启用' : '配置环境变量后切换真实数据'}</span>
         </div>
         {user && (
           <button className="signout-button" onClick={signOut}><LogOut size={18} />退出登录</button>
@@ -108,6 +124,7 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
       </nav>
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      {user && <NotificationPanel open={notificationOpen} userId={user.id} onClose={() => setNotificationOpen(false)} />}
       {user && (
         <ComposerModal
           open={composerOpen}
