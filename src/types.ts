@@ -46,8 +46,10 @@ export type Note = {
   like_count: number
   comment_count: number
   favorite_count: number
+  view_count?: number
   viewer_liked?: boolean
   viewer_favorited?: boolean
+  recommendation_reason?: string
 }
 
 export type CommentItem = {
@@ -58,8 +60,17 @@ export type CommentItem = {
   content: string
   created_at: string
   updated_at: string
+  like_count: number
+  reply_count: number
+  viewer_liked?: boolean
   author: Pick<Profile, 'id' | 'username' | 'display_name' | 'avatar_url'>
 }
+
+export type CommentThread = CommentItem & {
+  replies: CommentItem[]
+}
+
+export type UserConnection = Pick<Profile, 'id' | 'username' | 'display_name' | 'avatar_url' | 'bio' | 'follower_count' | 'following_count' | 'note_count'>
 
 export type NotificationItem = {
   id: string
