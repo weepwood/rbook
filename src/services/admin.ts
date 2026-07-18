@@ -70,16 +70,16 @@ async function administratorRequest<T>(path: string, init: RequestInit = {}): Pr
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
   if (!baseUrl || !publishableKey) throw new Error('缺少 Supabase 环境变量。')
 
+  const headers = new Headers(init.headers)
+  headers.set('apikey', publishableKey)
+  headers.set('Authorization', `Bearer ${token}`)
+  headers.set('Content-Type', 'application/json')
+
   const response = await fetch(`${baseUrl}/functions/v1/admin-console${path}`, {
     ...init,
-    headers: {
-      apikey: publishableKey,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
+    headers,
   })
-  const payload = await response.json().catch(() => ({}))
+  const payload = await response.json().catch(() => ({})) as { error?: string }
   if (!response.ok) throw new Error(payload.error || `管理员接口请求失败（${response.status}）`)
   return payload as T
 }
