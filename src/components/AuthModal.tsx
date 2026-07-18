@@ -7,6 +7,12 @@ type Props = {
   onClose: () => void
 }
 
+function getEmailRedirectUrl() {
+  const configuredSiteUrl = import.meta.env.VITE_SITE_URL?.trim()
+  const siteUrl = configuredSiteUrl || window.location.origin
+  return `${siteUrl.replace(/\/$/, '')}/`
+}
+
 export function AuthModal({ open, onClose }: Props) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [email, setEmail] = useState('')
@@ -31,10 +37,13 @@ export function AuthModal({ open, onClose }: Props) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { display_name: displayName } },
+          options: {
+            data: { display_name: displayName },
+            emailRedirectTo: getEmailRedirectUrl(),
+          },
         })
         if (error) throw error
-        setMessage('注册成功，请按邮件提示完成验证。')
+        setMessage('注册成功，请查收验证邮件。验证后将返回 RBook。')
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) throw error
