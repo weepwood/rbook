@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { LoaderCircle, RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
+import { NoteDetailModal } from '@/components/NoteDetailModal'
 import { useAuth } from '@/context/AuthContext'
 import { fetchFeed } from '@/services/notes'
 import type { Note } from '@/types'
@@ -19,6 +20,7 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTopic, setActiveTopic] = useState(mode === 'explore' ? '效率工具' : '推荐')
   const [notes, setNotes] = useState<Note[]>([])
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const query = searchParams.get('q') ?? ''
@@ -27,7 +29,7 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
     let cancelled = false
     setLoading(true)
     setError('')
-    fetchFeed({ query, tag: activeTopic })
+    fetchFeed({ query, tag: activeTopic, viewerId: user?.id })
       .then((data) => {
         if (!cancelled) setNotes(data)
       })
@@ -40,7 +42,7 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
     return () => {
       cancelled = true
     }
-  }, [query, activeTopic, refreshKey])
+  }, [query, activeTopic, refreshKey, user?.id])
 
   const title = useMemo(() => {
     if (query) return `“${query}” 的搜索结果`
@@ -82,9 +84,13 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
       ) : (
         <section className="masonry-feed">
           {notes.map((note) => (
-            <NoteCard key={note.id} note={note} userId={user?.id} onRequireAuth={onRequireAuth} />
+            <NoteCard key={note.id} note={note} userId={user?.id} onRequireAuth={onRequireAuth} onOpen={setSelectedNote} />
           ))}
         </section>
+      )}
+
+      {selectedNote && (
+        <NoteDetailModal note={selectedNote} userId={user?.id} onRequireAuth={onRequireAuth} onClose={() => setSelectedNote(null)} />
       )}
     </div>
   )
