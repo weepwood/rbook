@@ -1,38 +1,37 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Bookmark, FileText, Heart, LoaderCircle, MapPin, Save, Settings, ShieldCheck, X } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Bookmark, Camera, FileText, Heart, LoaderCircle, MapPin, MessageCircle, Save, Settings, ShieldCheck, UserRound, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
-import { NoteDetailModal } from '@/components/NoteDetailModal'
 import { useAuth } from '@/context/AuthContext'
 import { fetchUserCollection, updateProfile } from '@/services/notes'
+import { fetchUserCommentedNotes, uploadAvatar } from '@/services/social'
 import type { Note } from '@/types'
 
-type Tab = 'notes' | 'favorites' | 'liked'
+type Tab = 'notes' | 'favorites' | 'liked' | 'comments'
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
   { id: 'notes', label: '笔记', icon: FileText },
   { id: 'favorites', label: '收藏', icon: Bookmark },
   { id: 'liked', label: '赞过', icon: Heart },
+  { id: 'comments', label: '评论过', icon: MessageCircle },
 ]
 
 export function ProfilePage({ onLogin }: { onLogin: () => void }) {
+  const navigate = useNavigate()
   const { user, profile, accessLevel, configured, refreshProfile } = useAuth()
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const [activeTab, setActiveTab] = useState<Tab>('notes')
   const [notes, setNotes] = useState<Note[]>([])
-  const [selectedNote, setSelectedNote] = useState<Note | null>(null)
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [form, setForm] = useState({ display_name: '', username: '', bio: '', location: '' })
 
   useEffect(() => {
     if (!profile) return
-    setForm({
-      display_name: profile.display_name,
-      username: profile.username,
-      bio: profile.bio ?? '',
-      location: profile.location ?? '',
-    })
+    setForm({ display_name: profile.display_name, username: profile.username, bio: profile.bio ?? '', location: profile.location ?? '' })
   }, [profile])
 
   useEffect(() => {
@@ -40,19 +39,17 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
     let cancelled = false
     setLoading(true)
     setMessage('')
-    fetchUserCollection(user.id, activeTab)
-      .then((data) => {
-        if (!cancelled) setNotes(data)
-      })
-      .catch((error) => {
-        if (!cancelled) setMessage(error instanceof Error ? error.message : '内容加载失败。')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
+    const request = activeTab === 'comments'
+      ? fetchUserCommentedNotes(user.id, user.id)
+      : fetchUserCollection(user.id, activeTab)
+    request.then((data) => {
+      if (!cancelled) setNotes(data)
+    }).catch((error) => {
+      if (!cancelled) setMessage(error instanceof Error ? error.message : '内容加载失败。')
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
   }, [user, activeTab])
 
   if (!user) {
@@ -70,7 +67,6 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
 
   async function saveProfile(event: FormEvent) {
     event.preventDefault()
-    if (!user) return
     setSaving(true)
     setMessage('')
     try {
@@ -90,12 +86,35 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
     }
   }
 
+  async function changeAvatar(file?: File) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) return setMessage('请选择图片文件。')
+    if (file.size > 5 * 1024 * 1024) return setMessage('头像图片不能超过 5MB。')
+    setAvatarBusy(true)
+    setMessage('')
+    try {
+      await uploadAvatar(user.id, file)
+      await refreshProfile()
+      setMessage('头像已更新。')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '头像上传失败。')
+    } finally {
+      setAvatarBusy(false)
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
+    }
+  }
+
+  const emptyTitle = activeTab === 'notes' ? '发布第一篇笔记' : activeTab === 'favorites' ? '还没有收藏' : activeTab === 'liked' ? '还没有赞过的笔记' : '还没有参与评论'
+  const EmptyIcon = activeTab === 'notes' ? FileText : activeTab === 'favorites' ? Bookmark : activeTab === 'liked' ? Heart : MessageCircle
+
   return (
     <div className="profile-page">
       <section className="profile-hero">
-        <div className="profile-avatar">
+        <button className="profile-avatar profile-avatar-edit" onClick={() => avatarInputRef.current?.click()} disabled={avatarBusy} aria-label="更换头像">
           {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : displayName.slice(0, 1).toUpperCase()}
-        </div>
+          <span className="avatar-edit-mask">{avatarBusy ? <LoaderCircle className="spin" size={18} /> : <Camera size={18} />}</span>
+        </button>
+        <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif" hidden onChange={(event) => void changeAvatar(event.target.files?.[0])} />
         <div className="profile-copy">
           <div className="profile-name-line">
             <h1>{displayName}</h1>
@@ -107,10 +126,13 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
           <div className="profile-stats">
             <strong>{profile?.following_count ?? 0} <em>关注</em></strong>
             <strong>{profile?.follower_count ?? 0} <em>粉丝</em></strong>
-            <strong>{profile?.note_count ?? notes.length} <em>公开笔记</em></strong>
+            <strong>{profile?.note_count ?? 0} <em>公开笔记</em></strong>
           </div>
         </div>
-        <button className="secondary-button" onClick={() => setEditing(true)}><Settings size={17} />编辑资料</button>
+        <div className="profile-hero-actions">
+          {profile?.username && <button className="secondary-button" onClick={() => navigate(`/user/${profile.username}`)}><UserRound size={17} />预览主页</button>}
+          <button className="secondary-button" onClick={() => setEditing(true)}><Settings size={17} />编辑资料</button>
+        </div>
       </section>
 
       <section className="profile-tabs">
@@ -124,14 +146,10 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
         <div className="state-panel"><LoaderCircle className="spin" /><span>正在加载内容…</span></div>
       ) : notes.length ? (
         <section className="masonry-feed profile-feed">
-          {notes.map((note) => <NoteCard key={note.id} note={note} userId={user.id} onRequireAuth={onLogin} onOpen={setSelectedNote} />)}
+          {notes.map((note) => <NoteCard key={note.id} note={note} userId={user.id} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`)} />)}
         </section>
       ) : (
-        <div className="profile-content-empty">
-          {activeTab === 'notes' ? <FileText size={32} /> : activeTab === 'favorites' ? <Bookmark size={32} /> : <Heart size={32} />}
-          <h2>{activeTab === 'notes' ? '发布第一篇笔记' : activeTab === 'favorites' ? '还没有收藏' : '还没有赞过的笔记'}</h2>
-          <p>{activeTab === 'notes' ? '把一个真实经验讲清楚，就可能帮助到另一个人。' : '在首页发现有用内容后，可随时回到这里查看。'}</p>
-        </div>
+        <div className="profile-content-empty"><EmptyIcon size={32} /><h2>{emptyTitle}</h2><p>{activeTab === 'notes' ? '把一个真实经验讲清楚，就可能帮助到另一个人。' : '在社区产生互动后，可随时回到这里查看。'}</p></div>
       )}
 
       {editing && (
@@ -149,8 +167,6 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
           </section>
         </div>
       )}
-
-      {selectedNote && <NoteDetailModal note={selectedNote} userId={user.id} onRequireAuth={onLogin} onClose={() => setSelectedNote(null)} />}
     </div>
   )
 }
