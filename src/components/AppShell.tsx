@@ -6,6 +6,7 @@ import { useAccessTracking } from '@/hooks/useAccessTracking'
 import { AuthModal } from '@/components/AuthModal'
 import { ComposerModal } from '@/components/ComposerModal'
 import { NotificationPanel } from '@/components/NotificationPanel'
+import { fetchUnreadNotificationCount, subscribeToNotifications } from '@/services/notifications'
 
 type Props = {
   children: ReactNode
@@ -18,6 +19,7 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   const [authOpen, setAuthOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -25,12 +27,29 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   useAccessTracking()
 
   useEffect(() => {
+    setSearch(searchParams.get('q') ?? '')
+  }, [searchParams])
+
+  useEffect(() => {
     if (authRequestKey > 0) setAuthOpen(true)
   }, [authRequestKey])
 
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0)
+      return
+    }
+    const refresh = () => {
+      void fetchUnreadNotificationCount(user.id).then(setUnreadCount).catch(() => undefined)
+    }
+    refresh()
+    return subscribeToNotifications(user.id, refresh)
+  }, [user])
+
   function submitSearch(event: React.FormEvent) {
     event.preventDefault()
-    navigate(search.trim() ? `/?q=${encodeURIComponent(search.trim())}` : '/')
+    const query = search.trim()
+    navigate(query ? `/search?q=${encodeURIComponent(query)}` : '/search')
   }
 
   function openComposer() {
@@ -74,7 +93,10 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
           {search && <button type="button" onClick={() => setSearch('')} aria-label="清空"><X size={16} /></button>}
         </form>
         <div className="top-actions">
-          <button className={`icon-button ${notificationOpen ? 'active' : ''}`} aria-label="通知" onClick={openNotifications}><Bell size={20} /></button>
+          <button className={`icon-button notification-trigger ${notificationOpen ? 'active' : ''}`} aria-label={`通知${unreadCount ? `，${unreadCount} 条未读` : ''}`} onClick={openNotifications}>
+            <Bell size={20} />
+            {unreadCount > 0 && <span className="notification-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+          </button>
           <button className="publish-button" onClick={openComposer}><Plus size={18} />发布</button>
           {user ? (
             <button className="avatar-button" onClick={() => navigate('/me')} aria-label="个人主页">
@@ -124,7 +146,7 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
       </nav>
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
-      {user && <NotificationPanel open={notificationOpen} userId={user.id} onClose={() => setNotificationOpen(false)} />}
+      {user && <NotificationPanel open={notificationOpen} userId={user.id} onClose={() => setNotificationOpen(false)} onUnreadChange={setUnreadCount} />}
       {user && (
         <ComposerModal
           open={composerOpen}
