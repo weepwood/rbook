@@ -5,6 +5,11 @@ export type FeedMode = 'for_you' | 'following' | 'latest'
 export type CommentSort = 'hot' | 'latest'
 export type ContentEventType = 'impression' | 'open' | 'dwell' | 'like' | 'favorite' | 'comment' | 'share' | 'follow_author'
 
+type RecommendationRow = {
+  note_id: string
+  reason: string
+}
+
 const noteSelect = `
   id,author_id,title,content,tags,location,cover_url,view_count,created_at,
   profiles!notes_author_id_fkey (
@@ -87,9 +92,9 @@ export async function fetchRecommendedFeed(mode: FeedMode, viewerId?: string, li
   const db = supabase as any
   const { data, error } = await db.rpc('get_personalized_note_ids', { p_limit: limit, p_offset: offset, p_mode: mode })
   if (error) throw error
-  const rows = data ?? []
-  const reasons = new Map(rows.map((row: any) => [row.note_id, row.reason]))
-  return fetchNotesByIds(rows.map((row: any) => row.note_id), viewerId, reasons)
+  const rows = (data ?? []) as RecommendationRow[]
+  const reasons = new Map<string, string>(rows.map((row) => [row.note_id, row.reason]))
+  return fetchNotesByIds(rows.map((row) => row.note_id), viewerId, reasons)
 }
 
 export async function fetchRelatedNotes(noteId: string, viewerId?: string, limit = 8) {
