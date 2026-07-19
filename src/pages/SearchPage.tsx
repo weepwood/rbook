@@ -182,7 +182,7 @@ export function SearchPage({ onRequireAuth }: { onRequireAuth: () => void }) {
                     onRequireAuth={onRequireAuth}
                     onOpen={(selected) => {
                       void recordSearchEvent({ query, resultType: 'note', resultId: selected.id, eventType: 'click' })
-                      navigate(`/note/${selected.id}`)
+                      navigate(`/note/${selected.id}`, { state: { source: 'search' } })
                     }}
                   />
                 ))}
