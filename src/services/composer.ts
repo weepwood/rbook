@@ -91,7 +91,7 @@ export async function publishDraft(input: PublishInput) {
 
   try {
     const workerCount = Math.min(3, Math.max(1, input.files.length))
-    await Promise.all(Array.from({ length: workerCount }, worker))
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
 
     if (mediaRows.length > 0) {
       const { error: mediaError } = await db.from('note_media').insert(mediaRows)
@@ -119,10 +119,16 @@ export async function publishDraft(input: PublishInput) {
 
     return draft.id
   } catch (error) {
-    if (uploadedPaths.length > 0) {
-      await supabase.storage.from('note-media').remove(uploadedPaths).catch(() => undefined)
+    try {
+      if (uploadedPaths.length > 0) await supabase.storage.from('note-media').remove(uploadedPaths)
+    } catch {
+      // A scheduled storage cleanup can remove any remaining temporary files.
     }
-    await db.from('note_media').delete().eq('note_id', draft.id).catch(() => undefined)
+    try {
+      await db.from('note_media').delete().eq('note_id', draft.id)
+    } catch {
+      // Keep the draft private even if cleanup fails.
+    }
     throw error
   }
 }
