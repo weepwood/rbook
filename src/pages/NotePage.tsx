@@ -120,11 +120,12 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   async function share() {
     if (!note) return
     const url = window.location.href
+    const canUseNativeShare = typeof navigator.share === 'function'
     try {
-      if (navigator.share) await navigator.share({ title: note.title, text: note.content.slice(0, 100), url })
+      if (canUseNativeShare) await navigator.share({ title: note.title, text: note.content.slice(0, 100), url })
       else await navigator.clipboard.writeText(url)
       await recordContentEvent(note.id, 'share')
-      setNotice(navigator.share ? '分享面板已打开。' : '链接已复制。')
+      setNotice(canUseNativeShare ? '分享面板已打开。' : '链接已复制。')
     } catch {
       // 用户主动取消分享时无需提示错误。
     }
