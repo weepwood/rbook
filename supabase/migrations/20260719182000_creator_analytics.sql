@@ -244,7 +244,7 @@ begin
     left join current_events e on e.note_id = n.id
     where n.status = 'published'
     group by n.id, n.title, n.cover_url, n.published_at, n.created_at
-    order by engagement_rate desc, views desc, interactions desc nulls last, published_at desc
+    order by engagement_rate desc, views desc, published_at desc
     limit 50
   )
   select jsonb_build_object(
