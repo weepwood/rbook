@@ -8,6 +8,7 @@ import '@/features.css'
 import '@/social.css'
 import '@/layout-fixes.css'
 import '@/issue-1.css'
+import '@/admin-report.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
