@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
       admin.from("content_reports").select("id", { count: "exact", head: true }).eq("review_state", "pending"),
       admin.from("access_logs").select("created_at,path,status_code,duration_ms,session_id,country").gte("created_at", start14.toISOString()).order("created_at", { ascending: true }).limit(10000),
       admin.from("access_logs").select("id,user_id,path,status_code,duration_ms,ip_masked,country,city,user_agent,referrer,created_at").order("created_at", { ascending: false }).limit(80),
-      admin.from("content_reports").select("id,reason,review_state,created_at,note_id,comment_id,reporter_id").order("created_at", { ascending: false }).limit(30),
+      admin.from("content_reports").select("id,reason,category,priority,review_state,created_at,note_id,comment_id,reporter_id,assigned_to,resolution_note,content_snapshot,reviewed_at").order("created_at", { ascending: false }).limit(80),
     ]);
 
     const logs = logsResult.data ?? [];
@@ -172,9 +172,34 @@ Deno.serve(async (req: Request) => {
   } else if (action === "review_report") {
     const reviewState = String(body.review_state ?? "resolved");
     if (!["resolved", "dismissed"].includes(reviewState)) return reply({ error: "invalid_review_state" }, 400, headers);
-    const { error } = await admin.from("content_reports").update({ review_state: reviewState, handled_by: administratorId, handled_at: new Date().toISOString() }).eq("id", targetId);
+    const resolutionNote = String(body.resolution_note ?? (reviewState === "resolved" ? "举报已核实并处理" : "审核后未发现违规"));
+    const { data: report, error: reportError } = await admin.from("content_reports").select("id,reporter_id,note_id,comment_id,category").eq("id", targetId).maybeSingle();
+    if (reportError || !report) return reply({ error: reportError?.message ?? "report_not_found" }, 404, headers);
+    const reviewedAt = new Date().toISOString();
+    const { error } = await admin.from("content_reports").update({
+      review_state: reviewState,
+      handled_by: administratorId,
+      handled_at: reviewedAt,
+      assigned_to: administratorId,
+      resolution_note: resolutionNote,
+      reviewed_at: reviewedAt,
+    }).eq("id", targetId);
     if (error) return reply({ error: error.message }, 500, headers);
-    detail = { review_state: reviewState };
+
+    const targetPath = report.note_id ? `/note/${report.note_id}${report.comment_id ? `#comment-${report.comment_id}` : ""}` : null;
+    await admin.from("notifications").insert({
+      recipient_id: report.reporter_id,
+      actor_id: administratorId,
+      kind: "system",
+      note_id: report.note_id,
+      comment_id: report.comment_id,
+      target_type: report.comment_id ? "comment" : report.note_id ? "note" : "system",
+      target_id: report.comment_id ?? report.note_id,
+      target_path: targetPath,
+      message: reviewState === "resolved" ? `你的${report.category ?? "内容"}举报已处理：${resolutionNote}` : `你的举报已完成审核：${resolutionNote}`,
+      metadata: { report_id: targetId, review_state: reviewState },
+    });
+    detail = { review_state: reviewState, resolution_note: resolutionNote };
   } else {
     return reply({ error: "unknown_action" }, 400, headers);
   }
