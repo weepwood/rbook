@@ -63,6 +63,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
     )
   }
 
+  const userId = user.id
   const displayName = profile?.display_name || user.user_metadata?.display_name || user.email?.split('@')[0] || 'RBook 用户'
 
   async function saveProfile(event: FormEvent) {
@@ -70,7 +71,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
     setSaving(true)
     setMessage('')
     try {
-      await updateProfile(user.id, {
+      await updateProfile(userId, {
         display_name: form.display_name.trim(),
         username: form.username.trim().toLowerCase(),
         bio: form.bio.trim(),
@@ -93,7 +94,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
     setAvatarBusy(true)
     setMessage('')
     try {
-      await uploadAvatar(user.id, file)
+      await uploadAvatar(userId, file)
       await refreshProfile()
       setMessage('头像已更新。')
     } catch (error) {
@@ -120,7 +121,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
             <h1>{displayName}</h1>
             {accessLevel !== 'member' && <span className="role-badge"><ShieldCheck size={14} />{accessLevel === 'administrator' ? '管理员' : '审核员'}</span>}
           </div>
-          <p>@{profile?.username ?? user.id.slice(0, 8)}</p>
+          <p>@{profile?.username ?? userId.slice(0, 8)}</p>
           <span>{profile?.bio || '正在形成自己的生活经验库。'}</span>
           {profile?.location && <small className="profile-location"><MapPin size={14} />{profile.location}</small>}
           <div className="profile-stats">
@@ -146,7 +147,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
         <div className="state-panel"><LoaderCircle className="spin" /><span>正在加载内容…</span></div>
       ) : notes.length ? (
         <section className="masonry-feed profile-feed">
-          {notes.map((note) => <NoteCard key={note.id} note={note} userId={user.id} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`)} />)}
+          {notes.map((note) => <NoteCard key={note.id} note={note} userId={userId} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`)} />)}
         </section>
       ) : (
         <div className="profile-content-empty"><EmptyIcon size={32} /><h2>{emptyTitle}</h2><p>{activeTab === 'notes' ? '把一个真实经验讲清楚，就可能帮助到另一个人。' : '在社区产生互动后，可随时回到这里查看。'}</p></div>
