@@ -74,8 +74,9 @@ export async function markNotificationsRead(userId: string) {
 }
 
 export function subscribeToNotifications(userId: string, onChange: () => void) {
-  if (!supabase) return () => undefined
-  const channel = supabase
+  const client = supabase
+  if (!client) return () => undefined
+  const channel = client
     .channel(`rbook-notifications:${userId}`)
     .on('postgres_changes', {
       event: '*',
@@ -86,6 +87,6 @@ export function subscribeToNotifications(userId: string, onChange: () => void) {
     .subscribe()
 
   return () => {
-    void supabase.removeChannel(channel)
+    void client.removeChannel(channel)
   }
 }
