@@ -112,6 +112,8 @@ export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey:
     }
   }
 
+  const contentSource = query ? 'search' : mode === 'for_you' ? 'recommendation' : mode
+
   return (
     <div className="feed-page">
       <section className="feed-heading">
@@ -143,7 +145,7 @@ export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey:
                 note={note}
                 userId={user?.id}
                 onRequireAuth={onRequireAuth}
-                onOpen={(selected) => navigate(`/note/${selected.id}`)}
+                onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: contentSource } })}
                 trackImpression={!query}
                 onDismiss={!query && mode === 'for_you' ? dismissNote : undefined}
               />

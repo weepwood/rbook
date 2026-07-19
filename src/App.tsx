@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
 import { AdminPage } from '@/pages/AdminPage'
+import { CreatorAnalyticsPage } from '@/pages/CreatorAnalyticsPage'
 import { FeedPage } from '@/pages/FeedPage'
 import { NotePage } from '@/pages/NotePage'
 import { ProfilePage } from '@/pages/ProfilePage'
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/note/:noteId" element={<NotePage onRequireAuth={requireAuth} />} />
         <Route path="/user/:username" element={<PublicProfilePage onRequireAuth={requireAuth} />} />
         <Route path="/me" element={<ProfilePage onLogin={requireAuth} />} />
+        <Route path="/me/analytics" element={<CreatorAnalyticsPage onLogin={requireAuth} />} />
         <Route path="/admin" element={<AdminPage />} />
       </Routes>
     </AppShell>

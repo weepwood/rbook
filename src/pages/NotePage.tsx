@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Flag, Heart, LoaderCircle, MapPin, Share2, UserPlus, UserRoundCheck } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { CommentSection } from '@/components/CommentSection'
 import { NoteCard } from '@/components/NoteCard'
 import { ReportDialog } from '@/components/ReportDialog'
 import { useAuth } from '@/context/AuthContext'
+import { normalizeContentSource, recordAttributedContentEvent } from '@/services/attribution'
 import { toggleFavorite, toggleLike } from '@/services/notes'
-import { fetchFollowState, fetchNoteById, fetchRelatedNotes, recordContentEvent, toggleFollow } from '@/services/social'
+import { fetchFollowState, fetchNoteById, fetchRelatedNotes, toggleFollow } from '@/services/social'
 import type { Note } from '@/types'
 
 function formatDate(value: string) {
@@ -16,6 +17,7 @@ function formatDate(value: string) {
 export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const { noteId = '' } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const [note, setNote] = useState<Note | null>(null)
   const [related, setRelated] = useState<Note[]>([])
@@ -30,6 +32,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const [busyFollow, setBusyFollow] = useState(false)
   const [likeCount, setLikeCount] = useState(0)
   const openedAt = useRef(Date.now())
+  const source = normalizeContentSource((location.state as { source?: unknown } | null)?.source)
 
   useEffect(() => {
     let cancelled = false
@@ -50,7 +53,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
       setLikeCount(nextNote.like_count)
       if (user && user.id !== nextNote.author_id) setFollowing(await fetchFollowState(user.id, nextNote.author_id))
       openedAt.current = Date.now()
-      void recordContentEvent(noteId, 'open')
+      void recordAttributedContentEvent(noteId, 'open', source)
     }).catch((reason) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : '笔记加载失败。')
     }).finally(() => {
@@ -59,9 +62,9 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     return () => {
       cancelled = true
       const dwell = Date.now() - openedAt.current
-      if (dwell > 1500) void recordContentEvent(noteId, 'dwell', dwell)
+      if (dwell > 1500) void recordAttributedContentEvent(noteId, 'dwell', source, dwell)
     }
-  }, [noteId, user?.id])
+  }, [noteId, user?.id, source])
 
   const images = useMemo(() => {
     if (!note) return []
@@ -78,7 +81,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     setLikeCount((value) => Math.max(0, value + (previous ? -1 : 1)))
     try {
       await toggleLike(note.id, user.id, previous)
-      if (!previous) await recordContentEvent(note.id, 'like')
+      if (!previous) await recordAttributedContentEvent(note.id, 'like', source)
     } catch (reason) {
       setLiked(previous)
       setLikeCount((value) => Math.max(0, value + (previous ? 1 : -1)))
@@ -93,7 +96,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     setFavorited(!previous)
     try {
       await toggleFavorite(note.id, user.id, previous)
-      if (!previous) await recordContentEvent(note.id, 'favorite')
+      if (!previous) await recordAttributedContentEvent(note.id, 'favorite', source)
     } catch (reason) {
       setFavorited(previous)
       setError(reason instanceof Error ? reason.message : '收藏失败。')
@@ -108,7 +111,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     setFollowing(!previous)
     try {
       await toggleFollow(user.id, note.author_id, previous)
-      if (!previous) await recordContentEvent(note.id, 'follow_author')
+      if (!previous) await recordAttributedContentEvent(note.id, 'follow_author', source)
     } catch (reason) {
       setFollowing(previous)
       setError(reason instanceof Error ? reason.message : '关注失败。')
@@ -124,7 +127,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     try {
       if (canUseNativeShare) await navigator.share({ title: note.title, text: note.content.slice(0, 100), url })
       else await navigator.clipboard.writeText(url)
-      await recordContentEvent(note.id, 'share')
+      await recordAttributedContentEvent(note.id, 'share', source)
       setNotice(canUseNativeShare ? '分享面板已打开。' : '链接已复制。')
     } catch {
       // 用户主动取消分享时无需提示错误。
@@ -209,7 +212,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
           <header><div><p>MORE FOR YOU</p><h2>你可能还喜欢</h2></div><span>基于话题、作者与互动热度推荐</span></header>
           <div className="related-grid">
             {related.map((item) => (
-              <NoteCard key={item.id} note={item} userId={user?.id} onRequireAuth={onRequireAuth} onOpen={(selected) => navigate(`/note/${selected.id}`)} />
+              <NoteCard key={item.id} note={item} userId={user?.id} onRequireAuth={onRequireAuth} onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'related' } })} />
             ))}
           </div>
         </section>
