@@ -30,6 +30,11 @@ export type NoteMedia = {
   width: number | null
   height: number | null
   sort_order: number
+  mime_type?: string | null
+  size_bytes?: number | null
+  thumbnail_path?: string | null
+  alt_text?: string | null
+  upload_state?: 'pending' | 'uploading' | 'ready' | 'failed'
 }
 
 export type Note = {
@@ -41,6 +46,10 @@ export type Note = {
   location: string | null
   cover_url: string | null
   created_at: string
+  updated_at?: string
+  published_at?: string | null
+  status?: 'draft' | 'published' | 'archived'
+  version?: number
   author: Profile
   media: NoteMedia[]
   like_count: number
@@ -76,10 +85,14 @@ export type NotificationItem = {
   id: string
   recipient_id: string
   actor_id: string | null
-  kind: 'like' | 'comment' | 'follow' | 'system'
+  kind: 'like' | 'comment' | 'reply' | 'follow' | 'system'
   note_id: string | null
   comment_id: string | null
+  target_type?: 'note' | 'comment' | 'profile' | 'system' | null
+  target_id?: string | null
+  target_path?: string | null
   message: string | null
+  metadata?: Record<string, unknown>
   read_at: string | null
   created_at: string
   actor?: Pick<Profile, 'id' | 'display_name' | 'avatar_url'> | null
