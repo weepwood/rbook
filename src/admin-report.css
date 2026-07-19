@@ -1,0 +1,5 @@
+.report-snapshot { display: grid; gap: 6px; margin: 12px 0; padding: 12px 14px; border-left: 3px solid var(--primary, #ff2442); border-radius: 0 12px 12px 0; background: var(--surface-soft, #f7f7f7); }
+.report-snapshot strong { font-size: 13px; }
+.report-snapshot span { display: -webkit-box; overflow: hidden; color: var(--text-muted, #666); font-size: 12px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.report-resolution { margin: 10px 0; padding: 9px 11px; border-radius: 10px; background: color-mix(in srgb, #16a34a 8%, transparent); color: var(--text-muted, #555); font-size: 12px; line-height: 1.5; }
+.report-resolution strong { color: #15803d; }
