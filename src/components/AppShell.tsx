@@ -16,10 +16,12 @@ type Props = {
 
 export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   const { user, profile, signOut, configured, isAdmin, accountState } = useAuth()
+  const userId = user?.id
   const [authOpen, setAuthOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -35,16 +37,22 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   }, [authRequestKey])
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setUnreadCount(0)
       return
     }
-    const refresh = () => {
-      void fetchUnreadNotificationCount(user.id).then(setUnreadCount).catch(() => undefined)
+
+    const refreshUnread = () => {
+      void fetchUnreadNotificationCount(userId).then(setUnreadCount).catch(() => undefined)
     }
-    refresh()
-    return subscribeToNotifications(user.id, refresh)
-  }, [user])
+    const handleRealtimeChange = () => {
+      refreshUnread()
+      setNotificationRefreshKey((value) => value + 1)
+    }
+
+    refreshUnread()
+    return subscribeToNotifications(userId, handleRealtimeChange)
+  }, [userId])
 
   function submitSearch(event: React.FormEvent) {
     event.preventDefault()
@@ -146,7 +154,15 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
       </nav>
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
-      {user && <NotificationPanel open={notificationOpen} userId={user.id} onClose={() => setNotificationOpen(false)} onUnreadChange={setUnreadCount} />}
+      {user && (
+        <NotificationPanel
+          open={notificationOpen}
+          userId={user.id}
+          refreshKey={notificationRefreshKey}
+          onClose={() => setNotificationOpen(false)}
+          onUnreadChange={setUnreadCount}
+        />
+      )}
       {user && (
         <ComposerModal
           open={composerOpen}
