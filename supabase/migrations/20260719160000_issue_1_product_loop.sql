@@ -1,6 +1,7 @@
 -- RBook Issue #1: search, reliable creation, recommendation feedback,
 -- realtime notifications, and structured moderation.
 
+create schema if not exists extensions;
 create extension if not exists pg_trgm with schema extensions;
 
 alter table public.notes
@@ -93,6 +94,14 @@ create index if not exists search_events_query_created_idx
   on public.search_events (lower(query), created_at desc);
 create index if not exists feedback_user_created_idx
   on public.user_note_feedback (user_id, created_at desc);
+create unique index if not exists content_reports_pending_unique_idx
+  on public.content_reports (
+    reporter_id,
+    coalesce(note_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    coalesce(comment_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    category
+  )
+  where review_state = 'pending';
 
 alter table public.user_note_feedback enable row level security;
 alter table public.user_hidden_authors enable row level security;
@@ -156,6 +165,22 @@ begin
       using (auth.uid() = author_id)
       with check (auth.uid() = author_id);
   end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'notes' and policyname = 'authors_delete_own_drafts'
+  ) then
+    create policy authors_delete_own_drafts on public.notes
+      for delete to authenticated
+      using (auth.uid() = author_id and status = 'draft');
+  end if;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.notifications;
+exception
+  when duplicate_object then null;
 end $$;
 
 create or replace function public.search_rbook(
@@ -182,7 +207,7 @@ set search_path = public, extensions
 as $$
   with input as (
     select trim(coalesce(p_query, '')) as query,
-           '%' || replace(trim(coalesce(p_query, '')), '%', '\\%') || '%' as pattern
+           '%' || trim(coalesce(p_query, '')) || '%' as pattern
   ),
   note_results as (
     select
@@ -193,14 +218,16 @@ as $$
       p.username,
       n.tags,
       n.created_at,
-      greatest(
-        similarity(lower(n.title), lower(i.query)),
-        similarity(lower(n.content), lower(i.query)) * 0.55,
-        case when exists (
-          select 1 from unnest(coalesce(n.tags, '{}'::text[])) tag
-          where lower(tag) = lower(i.query)
-        ) then 1.0 else 0.0 end
-      ) + ln(2 + coalesce(n.view_count, 0)) * 0.015 as score,
+      (
+        greatest(
+          similarity(lower(n.title), lower(i.query)),
+          similarity(lower(n.content), lower(i.query)) * 0.55,
+          case when exists (
+            select 1 from unnest(coalesce(n.tags, '{}'::text[])) tag
+            where lower(tag) = lower(i.query)
+          ) then 1.0 else 0.0 end
+        ) + ln((2 + coalesce(n.view_count, 0))::double precision) * 0.015
+      )::double precision as score,
       jsonb_build_object(
         'author_id', n.author_id,
         'cover_url', n.cover_url,
@@ -214,11 +241,11 @@ as $$
       and coalesce(n.is_hidden, false) = false
       and i.query <> ''
       and (
-        n.title ilike i.pattern escape '\\'
-        or n.content ilike i.pattern escape '\\'
+        n.title ilike i.pattern
+        or n.content ilike i.pattern
         or exists (
           select 1 from unnest(coalesce(n.tags, '{}'::text[])) tag
-          where tag ilike i.pattern escape '\\'
+          where tag ilike i.pattern
         )
       )
   ),
@@ -231,10 +258,12 @@ as $$
       p.username,
       '{}'::text[] as tags,
       p.created_at,
-      greatest(
-        similarity(lower(p.username), lower(i.query)),
-        similarity(lower(p.display_name), lower(i.query))
-      ) + ln(2 + coalesce(p.follower_count, 0)) * 0.025 as score,
+      (
+        greatest(
+          similarity(lower(p.username), lower(i.query)),
+          similarity(lower(p.display_name), lower(i.query))
+        ) + ln((2 + coalesce(p.follower_count, 0))::double precision) * 0.025
+      )::double precision as score,
       jsonb_build_object(
         'avatar_url', p.avatar_url,
         'follower_count', p.follower_count,
@@ -244,7 +273,7 @@ as $$
     from public.profiles p
     cross join input i
     where i.query <> ''
-      and (p.username ilike i.pattern escape '\\' or p.display_name ilike i.pattern escape '\\')
+      and (p.username ilike i.pattern or p.display_name ilike i.pattern)
   ),
   topic_results as (
     select
@@ -255,7 +284,9 @@ as $$
       null::text as username,
       array[tag]::text[] as tags,
       max(n.created_at) as created_at,
-      similarity(lower(tag), lower(i.query)) + ln(2 + count(*)) * 0.08 as score,
+      (
+        similarity(lower(tag), lower(i.query)) + ln((2 + count(*))::double precision) * 0.08
+      )::double precision as score,
       jsonb_build_object('note_count', count(*)) as metadata
     from public.notes n
     cross join lateral unnest(coalesce(n.tags, '{}'::text[])) tag
@@ -263,7 +294,7 @@ as $$
     where n.status = 'published'
       and coalesce(n.is_hidden, false) = false
       and i.query <> ''
-      and tag ilike i.pattern escape '\\'
+      and tag ilike i.pattern
     group by tag, i.query
   ),
   combined as (
