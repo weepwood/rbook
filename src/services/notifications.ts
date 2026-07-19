@@ -6,6 +6,8 @@ const notificationSelect = `
   profiles!notifications_actor_id_fkey (id,display_name,avatar_url)
 `
 
+let notificationChannelSequence = 0
+
 function mapNotification(row: any): NotificationItem {
   return {
     id: row.id,
@@ -76,17 +78,29 @@ export async function markNotificationsRead(userId: string) {
 export function subscribeToNotifications(userId: string, onChange: () => void) {
   const client = supabase
   if (!client) return () => undefined
-  const channel = client
-    .channel(`rbook-notifications:${userId}`)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'notifications',
-      filter: `recipient_id=eq.${userId}`,
-    }, onChange)
-    .subscribe()
 
-  return () => {
-    void client.removeChannel(channel)
+  notificationChannelSequence += 1
+  const topic = `rbook-notifications:${userId}:${Date.now()}:${notificationChannelSequence}`
+
+  try {
+    const channel = client
+      .channel(topic)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `recipient_id=eq.${userId}`,
+      }, onChange)
+      .subscribe()
+
+    let removed = false
+    return () => {
+      if (removed) return
+      removed = true
+      void client.removeChannel(channel)
+    }
+  } catch (error) {
+    console.warn('RBook notification realtime subscription failed', error)
+    return () => undefined
   }
 }
