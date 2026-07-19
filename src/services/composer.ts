@@ -21,7 +21,7 @@ export async function saveDraft(input: DraftInput) {
   const values = {
     author_id: input.authorId,
     title: input.title.trim() || '未命名草稿',
-    content: input.content,
+    content: input.content || ' ',
     tags: input.tags,
     location: input.location?.trim() || null,
     status: 'draft',
@@ -52,7 +52,14 @@ export async function saveDraft(input: DraftInput) {
 
 export async function publishDraft(input: PublishInput) {
   if (!supabase) throw new Error('请先配置 Supabase 环境变量。')
-  const db = supabase as any
+  const title = input.title.trim()
+  const content = input.content.trim()
+  if (!title) throw new Error('发布前请填写标题。')
+  if (!content) throw new Error('发布前请填写正文。')
+  if (input.files.length === 0) throw new Error('发布前请至少添加一张图片。')
+
+  const client = supabase
+  const db = client as any
   const draft = await saveDraft(input)
   const uploadedPaths: string[] = []
   const mediaRows: Array<Record<string, unknown>> = new Array(input.files.length)
@@ -66,7 +73,7 @@ export async function publishDraft(input: PublishInput) {
       const asset = input.files[index]
       const extension = asset.file.name.split('.').pop()?.toLowerCase() || 'webp'
       const storagePath = `${input.authorId}/${draft.id}/${crypto.randomUUID()}.${extension}`
-      const { error } = await supabase!.storage.from('note-media').upload(storagePath, asset.file, {
+      const { error } = await client.storage.from('note-media').upload(storagePath, asset.file, {
         cacheControl: '31536000',
         upsert: false,
         contentType: asset.file.type,
@@ -82,7 +89,7 @@ export async function publishDraft(input: PublishInput) {
         mime_type: asset.file.type,
         size_bytes: asset.file.size,
         upload_state: 'ready',
-        alt_text: input.title.trim(),
+        alt_text: title,
       }
       completed += 1
       input.onProgress?.(completed, input.files.length)
@@ -102,8 +109,8 @@ export async function publishDraft(input: PublishInput) {
     const { error: publishError } = await db
       .from('notes')
       .update({
-        title: input.title.trim(),
-        content: input.content.trim(),
+        title,
+        content,
         tags: input.tags,
         location: input.location?.trim() || null,
         cover_url: mediaRows[0]?.storage_path ?? null,
@@ -120,7 +127,7 @@ export async function publishDraft(input: PublishInput) {
     return draft.id
   } catch (error) {
     try {
-      if (uploadedPaths.length > 0) await supabase.storage.from('note-media').remove(uploadedPaths)
+      if (uploadedPaths.length > 0) await client.storage.from('note-media').remove(uploadedPaths)
     } catch {
       // A scheduled storage cleanup can remove any remaining temporary files.
     }
