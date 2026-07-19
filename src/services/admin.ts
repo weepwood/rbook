@@ -35,11 +35,17 @@ export type AccessLog = {
 export type ContentReport = {
   id: string
   reason: string
+  category: 'spam' | 'harassment' | 'misinformation' | 'copyright' | 'adult' | 'other'
+  priority: number
   review_state: 'pending' | 'resolved' | 'dismissed'
   created_at: string
   note_id: string | null
   comment_id: string | null
   reporter_id: string
+  assigned_to: string | null
+  resolution_note: string | null
+  content_snapshot: Record<string, unknown>
+  reviewed_at: string | null
 }
 
 export type DashboardData = {
@@ -113,9 +119,9 @@ export function setCommentVisibility(targetId: string, hidden: boolean) {
   })
 }
 
-export function reviewReport(targetId: string, reviewState: 'resolved' | 'dismissed') {
+export function reviewReport(targetId: string, reviewState: 'resolved' | 'dismissed', resolutionNote?: string) {
   return administratorRequest<{ ok: boolean }>('', {
     method: 'POST',
-    body: JSON.stringify({ action: 'review_report', target_id: targetId, target_type: 'report', review_state: reviewState }),
+    body: JSON.stringify({ action: 'review_report', target_id: targetId, target_type: 'report', review_state: reviewState, resolution_note: resolutionNote }),
   })
 }

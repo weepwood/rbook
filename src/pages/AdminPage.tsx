@@ -16,6 +16,15 @@ import type { AccessLevel, AccountState } from '@/types'
 
 type Tab = 'overview' | 'users' | 'access' | 'reports'
 
+const reportCategoryLabels: Record<ContentReport['category'], string> = {
+  spam: '垃圾信息',
+  harassment: '骚扰攻击',
+  misinformation: '虚假内容',
+  copyright: '侵权内容',
+  adult: '色情低俗',
+  other: '其他问题',
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
@@ -27,6 +36,12 @@ function deviceLabel(userAgent: string | null) {
   if (/macintosh|mac os/i.test(userAgent)) return 'macOS'
   if (/linux/i.test(userAgent)) return 'Linux'
   return '桌面浏览器'
+}
+
+function snapshotText(report: ContentReport) {
+  const title = typeof report.content_snapshot?.title === 'string' ? report.content_snapshot.title : ''
+  const content = typeof report.content_snapshot?.content === 'string' ? report.content_snapshot.content : ''
+  return { title, content }
 }
 
 function ManagedUserRow({ item, onSaved }: { item: ManagedUser; onSaved: () => void }) {
@@ -105,9 +120,9 @@ export function AdminPage() {
       if (action === 'hide') {
         if (report.note_id) await setNoteVisibility(report.note_id, true, `举报处理：${report.reason}`)
         if (report.comment_id) await setCommentVisibility(report.comment_id, true)
-        await reviewReport(report.id, 'resolved')
+        await reviewReport(report.id, 'resolved', `已核实“${reportCategoryLabels[report.category]}”问题并隐藏相关内容。`)
       } else {
-        await reviewReport(report.id, 'dismissed')
+        await reviewReport(report.id, 'dismissed', '已审核现有内容与上下文，暂未发现违反社区规范的情况。')
       }
       await load()
     } catch (reason) {
@@ -190,15 +205,20 @@ export function AdminPage() {
 
       {dashboard && tab === 'reports' && (
         <section className="admin-card table-card">
-          <header><div><strong>内容举报</strong><span>隐藏违规内容或驳回无效举报，操作会写入管理员审计日志</span></div><Flag size={20} /></header>
+          <header><div><strong>内容举报</strong><span>按分类查看内容快照，处理结果会通知举报人并写入审计日志</span></div><Flag size={20} /></header>
           <div className="report-list">
-            {dashboard.reports.length === 0 ? <p className="empty-copy">暂无举报。</p> : dashboard.reports.map((report) => (
-              <article key={report.id} className={`report-item ${report.review_state}`}>
-                <div><span>{report.note_id ? '笔记举报' : '评论举报'}</span><time>{formatDate(report.created_at)}</time></div>
-                <p>{report.reason}</p>
-                <footer><em>{report.review_state === 'pending' ? '待处理' : report.review_state === 'resolved' ? '已解决' : '已驳回'}</em>{report.review_state === 'pending' && <div><button className="danger-button" disabled={actionId === report.id} onClick={() => void handleReport(report, 'hide')}><Ban size={15} />隐藏并解决</button><button className="secondary-button compact" disabled={actionId === report.id} onClick={() => void handleReport(report, 'dismiss')}>驳回</button></div>}</footer>
-              </article>
-            ))}
+            {dashboard.reports.length === 0 ? <p className="empty-copy">暂无举报。</p> : dashboard.reports.map((report) => {
+              const snapshot = snapshotText(report)
+              return (
+                <article key={report.id} className={`report-item ${report.review_state}`}>
+                  <div><span>{report.note_id ? '笔记举报' : '评论举报'} · {reportCategoryLabels[report.category]}</span><time>{formatDate(report.created_at)}</time></div>
+                  <p>{report.reason}</p>
+                  {(snapshot.title || snapshot.content) && <blockquote className="report-snapshot"><strong>{snapshot.title || '内容快照'}</strong>{snapshot.content && <span>{snapshot.content}</span>}</blockquote>}
+                  {report.resolution_note && <p className="report-resolution"><strong>处理说明：</strong>{report.resolution_note}</p>}
+                  <footer><em>{report.review_state === 'pending' ? '待处理' : report.review_state === 'resolved' ? '已解决' : '已驳回'}</em>{report.review_state === 'pending' && <div><button className="danger-button" disabled={actionId === report.id} onClick={() => void handleReport(report, 'hide')}><Ban size={15} />隐藏并解决</button><button className="secondary-button compact" disabled={actionId === report.id} onClick={() => void handleReport(report, 'dismiss')}>驳回</button></div>}</footer>
+                </article>
+              )
+            })}
           </div>
         </section>
       )}

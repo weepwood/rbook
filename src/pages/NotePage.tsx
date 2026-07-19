@@ -3,8 +3,9 @@ import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Flag, Heart, LoaderCirc
 import { useNavigate, useParams } from 'react-router-dom'
 import { CommentSection } from '@/components/CommentSection'
 import { NoteCard } from '@/components/NoteCard'
+import { ReportDialog } from '@/components/ReportDialog'
 import { useAuth } from '@/context/AuthContext'
-import { reportContent, toggleFavorite, toggleLike } from '@/services/notes'
+import { toggleFavorite, toggleLike } from '@/services/notes'
 import { fetchFollowState, fetchNoteById, fetchRelatedNotes, recordContentEvent, toggleFollow } from '@/services/social'
 import type { Note } from '@/types'
 
@@ -20,6 +21,8 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const [related, setRelated] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [reportOpen, setReportOpen] = useState(false)
   const [imageIndex, setImageIndex] = useState(0)
   const [liked, setLiked] = useState(false)
   const [favorited, setFavorited] = useState(false)
@@ -32,6 +35,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     let cancelled = false
     setLoading(true)
     setError('')
+    setNotice('')
     setImageIndex(0)
     Promise.all([
       fetchNoteById(noteId, user?.id),
@@ -116,26 +120,20 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   async function share() {
     if (!note) return
     const url = window.location.href
+    const canUseNativeShare = typeof navigator.share === 'function'
     try {
-      if (navigator.share) await navigator.share({ title: note.title, text: note.content.slice(0, 100), url })
+      if (canUseNativeShare) await navigator.share({ title: note.title, text: note.content.slice(0, 100), url })
       else await navigator.clipboard.writeText(url)
       await recordContentEvent(note.id, 'share')
+      setNotice(canUseNativeShare ? '分享面板已打开。' : '链接已复制。')
     } catch {
       // 用户主动取消分享时无需提示错误。
     }
   }
 
-  async function report() {
+  function openReport() {
     if (!user) return onRequireAuth()
-    if (!note) return
-    const reason = window.prompt('请简要说明举报原因（2—500 字）')?.trim()
-    if (!reason) return
-    try {
-      await reportContent({ reporterId: user.id, noteId: note.id, reason })
-      window.alert('举报已提交，管理员会进行处理。')
-    } catch (reasonError) {
-      setError(reasonError instanceof Error ? reasonError.message : '举报失败。')
-    }
+    setReportOpen(true)
   }
 
   if (loading) return <div className="state-panel note-page-state"><LoaderCircle className="spin" /><span>正在打开笔记…</span></div>
@@ -147,7 +145,8 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   return (
     <div className="note-page">
       <button className="note-page-back" onClick={() => navigate(-1)}><ArrowLeft size={18} />返回</button>
-      {error && <p className="page-message">{error}</p>}
+      {error && <p className="page-message error">{error}</p>}
+      {notice && <p className="page-message">{notice}</p>}
 
       <section className="note-page-shell">
         <div className="note-page-gallery">
@@ -186,7 +185,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
           <article className="note-page-copy">
             <h1>{note.title}</h1>
             <p>{note.content}</p>
-            <div className="detail-tags">{note.tags.map((tag) => <button key={tag} onClick={() => navigate(`/?q=${encodeURIComponent(tag)}`)}>#{tag}</button>)}</div>
+            <div className="detail-tags">{note.tags.map((tag) => <button key={tag} onClick={() => navigate(`/search?q=${encodeURIComponent(tag)}&type=note`)}>#{tag}</button>)}</div>
             <div className="detail-meta">
               <time>{formatDate(note.created_at)}</time>
               {note.location && <span><MapPin size={14} />{note.location}</span>}
@@ -198,7 +197,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
             <button className={liked ? 'active' : ''} onClick={() => void handleLike()}><Heart size={21} fill={liked ? 'currentColor' : 'none'} />{likeCount}</button>
             <button className={favorited ? 'active' : ''} onClick={() => void handleFavorite()}><Bookmark size={21} fill={favorited ? 'currentColor' : 'none'} />{favorited ? '已收藏' : '收藏'}</button>
             <button onClick={() => void share()}><Share2 size={21} />分享</button>
-            <button onClick={() => void report()}><Flag size={19} />举报</button>
+            <button onClick={openReport}><Flag size={19} />举报</button>
           </div>
 
           <CommentSection noteId={note.id} userId={user?.id} onRequireAuth={onRequireAuth} onCountChange={(count) => setNote((value) => value ? { ...value, comment_count: count } : value)} />
@@ -214,6 +213,17 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
             ))}
           </div>
         </section>
+      )}
+
+      {user && (
+        <ReportDialog
+          open={reportOpen}
+          reporterId={user.id}
+          noteId={note.id}
+          snapshot={{ title: note.title, content: note.content.slice(0, 1000), author_id: note.author_id, author_username: note.author.username }}
+          onClose={() => setReportOpen(false)}
+          onSubmitted={() => setNotice('举报已提交，审核结果会通过通知中心反馈。')}
+        />
       )}
     </div>
   )

@@ -15,10 +15,11 @@ export function useAccessTracking() {
   const location = useLocation()
 
   useEffect(() => {
-    if (!supabase) return
+    const client = supabase
+    if (!client) return
     const startedAt = performance.now()
     const timer = window.setTimeout(() => {
-      void supabase.functions.invoke('track-access', {
+      void client.functions.invoke('track-access', {
         body: {
           session_id: getSessionId(),
           path: `${location.pathname}${location.search}`,
