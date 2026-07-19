@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Bookmark, Camera, FileText, Heart, LoaderCircle, MapPin, MessageCircle, Save, Settings, ShieldCheck, UserRound, X } from 'lucide-react'
+import { BarChart3, Bookmark, Camera, FileText, Heart, LoaderCircle, MapPin, MessageCircle, Save, Settings, ShieldCheck, UserRound, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
@@ -131,6 +131,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
           </div>
         </div>
         <div className="profile-hero-actions">
+          <button className="secondary-button" onClick={() => navigate('/me/analytics')}><BarChart3 size={17} />数据中心</button>
           {profile?.username && <button className="secondary-button" onClick={() => navigate(`/user/${profile.username}`)}><UserRound size={17} />预览主页</button>}
           <button className="secondary-button" onClick={() => setEditing(true)}><Settings size={17} />编辑资料</button>
         </div>
@@ -147,7 +148,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
         <div className="state-panel"><LoaderCircle className="spin" /><span>正在加载内容…</span></div>
       ) : notes.length ? (
         <section className="masonry-feed profile-feed">
-          {notes.map((note) => <NoteCard key={note.id} note={note} userId={userId} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`)} />)}
+          {notes.map((note) => <NoteCard key={note.id} note={note} userId={userId} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'profile' } })} />)}
         </section>
       ) : (
         <div className="profile-content-empty"><EmptyIcon size={32} /><h2>{emptyTitle}</h2><p>{activeTab === 'notes' ? '把一个真实经验讲清楚，就可能帮助到另一个人。' : '在社区产生互动后，可随时回到这里查看。'}</p></div>
