@@ -3,9 +3,9 @@ import { Clock3, LoaderCircle, RefreshCw, Sparkles, UserRoundCheck } from 'lucid
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { NoteCard, type NoteDismissReason } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
-import { recordNoteFeedback } from '@/services/feedback'
+import { fetchFilteredRecommendationPage, recordNoteFeedback } from '@/services/feedback'
 import { fetchFeed } from '@/services/notes'
-import { fetchRecommendedFeed, type FeedMode } from '@/services/social'
+import type { FeedMode } from '@/services/social'
 import type { Note } from '@/types'
 
 const PAGE_SIZE = 20
@@ -26,6 +26,7 @@ export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey:
   const [searchParams, setSearchParams] = useSearchParams()
   const [mode, setMode] = useState<FeedMode>('for_you')
   const [notes, setNotes] = useState<Note[]>([])
+  const [sourceOffset, setSourceOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -38,12 +39,13 @@ export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey:
     setLoading(true)
     setError('')
     const request = query
-      ? fetchFeed({ query, viewerId: user?.id, limit: 40 })
-      : fetchRecommendedFeed(mode, user?.id, PAGE_SIZE, 0)
-    request.then((data) => {
+      ? fetchFeed({ query, viewerId: user?.id, limit: 40 }).then((items) => ({ notes: items, sourceCount: items.length }))
+      : fetchFilteredRecommendationPage(mode, user?.id, PAGE_SIZE, 0)
+    request.then((page) => {
       if (cancelled) return
-      setNotes(data)
-      setHasMore(!query && data.length === PAGE_SIZE)
+      setNotes(page.notes)
+      setSourceOffset(page.sourceCount)
+      setHasMore(!query && page.sourceCount === PAGE_SIZE)
       const savedPosition = Number(sessionStorage.getItem(`rbook-feed-scroll:${mode}`) ?? 0)
       if (savedPosition > 0) window.requestAnimationFrame(() => window.scrollTo({ top: savedPosition }))
     }).catch((reason) => {
@@ -62,15 +64,16 @@ export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey:
     setLoadingMore(true)
     setError('')
     try {
-      const next = await fetchRecommendedFeed(mode, user?.id, PAGE_SIZE, notes.length)
-      setNotes((current) => deduplicate(current, next))
-      setHasMore(next.length === PAGE_SIZE)
+      const next = await fetchFilteredRecommendationPage(mode, user?.id, PAGE_SIZE, sourceOffset)
+      setNotes((current) => deduplicate(current, next.notes))
+      setSourceOffset((current) => current + next.sourceCount)
+      setHasMore(next.sourceCount === PAGE_SIZE)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '加载更多失败。')
     } finally {
       setLoadingMore(false)
     }
-  }, [query, loading, loadingMore, hasMore, mode, user?.id, notes.length])
+  }, [query, loading, loadingMore, hasMore, mode, user?.id, sourceOffset])
 
   useEffect(() => {
     if (!sentinelRef.current || !hasMore || query) return
