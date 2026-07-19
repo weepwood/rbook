@@ -5,13 +5,13 @@ import {
   fetchNotifications,
   markNotificationRead,
   markNotificationsRead,
-  subscribeToNotifications,
 } from '@/services/notifications'
 import type { NotificationItem } from '@/types'
 
 type Props = {
   open: boolean
   userId: string
+  refreshKey: number
   onClose: () => void
   onUnreadChange?: (count: number) => void
 }
@@ -42,7 +42,7 @@ function targetPath(item: NotificationItem) {
   return null
 }
 
-export function NotificationPanel({ open, userId, onClose, onUnreadChange }: Props) {
+export function NotificationPanel({ open, userId, refreshKey, onClose, onUnreadChange }: Props) {
   const navigate = useNavigate()
   const [items, setItems] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -61,11 +61,7 @@ export function NotificationPanel({ open, userId, onClose, onUnreadChange }: Pro
     load()
       .catch((error) => setMessage(error instanceof Error ? error.message : '通知加载失败。'))
       .finally(() => setLoading(false))
-  }, [open, load])
-
-  useEffect(() => subscribeToNotifications(userId, () => {
-    void load().catch(() => undefined)
-  }), [userId, load])
+  }, [open, refreshKey, load])
 
   if (!open) return null
 
