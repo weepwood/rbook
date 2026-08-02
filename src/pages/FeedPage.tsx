@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Flame, Hash, LoaderCircle, RefreshCw, TrendingUp } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
 import { fetchFeed } from '@/services/notes'
@@ -22,6 +22,7 @@ function compactCount(value: number) {
 export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [notes, setNotes] = useState<Note[]>([])
   const [topics, setTopics] = useState<TrendingTopic[]>([])
@@ -103,13 +104,14 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
         <div className="state-panel"><p>暂时没有匹配的笔记。</p></div>
       ) : (
         <section className="masonry-feed">
-          {notes.map((note) => (
+          {notes.map((note, index) => (
             <NoteCard
               key={note.id}
               note={note}
               userId={user?.id}
               onRequireAuth={onRequireAuth}
-              onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'explore' } })}
+              onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'explore', backgroundLocation: location } })}
+              priority={index < 6}
             />
           ))}
         </section>
