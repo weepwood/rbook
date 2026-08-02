@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bookmark, EyeOff, Heart, Lock, MessageCircle, MoreHorizontal, Sparkles, UserX } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import type { Note } from '@/types'
 import { toggleFavorite, toggleLike } from '@/services/notes'
 import { recordContentEvent } from '@/services/social'
@@ -22,6 +23,7 @@ function formatCount(value: number) {
 }
 
 export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression = false, onDismiss }: Props) {
+  const navigate = useNavigate()
   const cardRef = useRef<HTMLElement>(null)
   const isPrivate = note.visibility === 'private'
   const [liked, setLiked] = useState(Boolean(note.viewer_liked))
@@ -115,7 +117,11 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
             </div>
           )}
         </div>
-        <div className="tag-line">{note.tags.slice(0, 2).map((tag) => <span key={tag}>#{tag}</span>)}</div>
+        <div className="tag-line">
+          {note.tags.slice(0, 2).map((tag) => isPrivate
+            ? <span key={tag}>#{tag}</span>
+            : <button key={tag} onClick={() => navigate(`/topic/${encodeURIComponent(tag)}`)}>#{tag}</button>)}
+        </div>
         <footer className="note-footer">
           <button className="author-chip" onClick={() => onOpen(currentNote)}>
             {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
