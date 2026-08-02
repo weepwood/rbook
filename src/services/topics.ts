@@ -13,26 +13,65 @@ export type TrendingTopic = {
   is_followed: boolean
 }
 
+const starterTopicNames = [
+  '效率工具',
+  '知识管理',
+  'AI 实践',
+  '独立开发',
+  '桌面整理',
+  '阅读笔记',
+  '城市漫游',
+  '一人食',
+  '低成本改造',
+  '周末徒步',
+  '创意实验',
+  '真实体验',
+]
+
 function normalizeTopic(value: string) {
   return value.trim().replace(/^#+/, '').slice(0, 60)
 }
 
+function starterTopics(limit: number, followed: Set<string>, excluded = new Set<string>()): TrendingTopic[] {
+  return starterTopicNames
+    .filter((topic) => !excluded.has(topic.toLowerCase()))
+    .slice(0, limit)
+    .map((topic, index) => ({
+      topic,
+      note_count: 0,
+      recent_note_count: 0,
+      interaction_count: 0,
+      score: Math.max(0, starterTopicNames.length - index),
+      is_followed: followed.has(topic.toLowerCase()),
+    }))
+}
+
 export async function fetchTrendingTopics(limit = 12, windowDays = 30): Promise<TrendingTopic[]> {
-  if (!supabase) return []
+  const safeLimit = Math.max(1, Math.min(limit, 50))
+  if (!supabase) return starterTopics(safeLimit, new Set())
   const db = supabase as any
-  const { data, error } = await db.rpc('get_trending_topics', {
-    p_limit: Math.max(1, Math.min(limit, 50)),
-    p_window_days: Math.max(1, Math.min(windowDays, 365)),
-  })
+  const [{ data, error }, followedResult] = await Promise.all([
+    db.rpc('get_trending_topics', {
+      p_limit: safeLimit,
+      p_window_days: Math.max(1, Math.min(windowDays, 365)),
+    }),
+    db.from('topic_follows').select('topic'),
+  ])
   if (error) throw error
-  return (data ?? []).map((row: any) => ({
+
+  const followed = new Set((followedResult.data ?? []).map((row: any) => String(row.topic).toLowerCase()))
+  const topics: TrendingTopic[] = (data ?? []).map((row: any) => ({
     topic: String(row.topic),
     note_count: Number(row.note_count ?? 0),
     recent_note_count: Number(row.recent_note_count ?? 0),
     interaction_count: Number(row.interaction_count ?? 0),
     score: Number(row.score ?? 0),
-    is_followed: Boolean(row.is_followed),
+    is_followed: Boolean(row.is_followed) || followed.has(String(row.topic).toLowerCase()),
   }))
+
+  if (topics.length >= safeLimit) return topics.slice(0, safeLimit)
+  const existing = new Set(topics.map((item) => item.topic.toLowerCase()))
+  return [...topics, ...starterTopics(safeLimit - topics.length, followed, existing)]
 }
 
 export async function fetchTopicNotes(
