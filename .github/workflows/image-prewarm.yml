@@ -1,0 +1,99 @@
+name: Image CDN Prewarm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'netlify.toml'
+      - '.env.production'
+      - '.github/workflows/image-prewarm.yml'
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-cdn-prewarm
+  cancel-in-progress: true
+
+jobs:
+  prewarm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read public Supabase configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUPABASE_URL="$(grep '^VITE_SUPABASE_URL=' .env.production | cut -d= -f2-)"
+          SUPABASE_KEY="$(grep '^VITE_SUPABASE_PUBLISHABLE_KEY=' .env.production | cut -d= -f2-)"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_KEY"
+          echo "::add-mask::$SUPABASE_KEY"
+          echo "SUPABASE_URL=$SUPABASE_URL" >> "$GITHUB_ENV"
+          echo "SUPABASE_KEY=$SUPABASE_KEY" >> "$GITHUB_ENV"
+
+      - name: Allow production deploy to settle
+        if: github.event_name == 'push'
+        run: sleep 75
+
+      - name: Prewarm responsive image variants
+        shell: bash
+        env:
+          SITE_URL: https://rrrrbook.netlify.app
+        run: |
+          set -euo pipefail
+
+          notes_json="$(curl --fail --silent --show-error \
+            --retry 3 --retry-delay 3 --retry-all-errors \
+            -H "apikey: $SUPABASE_KEY" \
+            -H 'Accept: application/json' \
+            "$SUPABASE_URL/rest/v1/notes?select=id&status=eq.published&is_hidden=eq.false&visibility=eq.public&order=created_at.desc&limit=60")"
+
+          ids_json="$(jq '[.[].id]' <<< "$notes_json")"
+          count="$(jq 'length' <<< "$ids_json")"
+          if [ "$count" -eq 0 ]; then
+            echo 'No public note images to prewarm.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cards_json="$(curl --fail --silent --show-error \
+            --retry 3 --retry-delay 3 --retry-all-errors \
+            -X POST \
+            -H "apikey: $SUPABASE_KEY" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            --data "$(jq -cn --argjson ids "$ids_json" '{p_note_ids:$ids}')" \
+            "$SUPABASE_URL/rest/v1/rpc/get_note_cards_by_ids")"
+
+          jq -r '.[] | select(.media.storage_path != null) | .media.storage_path' <<< "$cards_json" | nl -ba | while read -r position path; do
+            source_url="$SUPABASE_URL/storage/v1/object/public/note-media/$path"
+            encoded_source="$(jq -rn --arg value "$source_url" '$value|@uri')"
+            for width in 320 480 640; do
+              printf '%s\n' "$SITE_URL/.netlify/images?url=$encoded_source&w=$width&q=72&fm=webp"
+            done
+            if [ "$position" -le 12 ]; then
+              printf '%s\n' "$SITE_URL/.netlify/images?url=$encoded_source&w=1080&q=82&fm=webp"
+            fi
+          done > /tmp/image-variants.txt
+
+          total="$(wc -l < /tmp/image-variants.txt | tr -d ' ')"
+          cat /tmp/image-variants.txt | xargs -r -n 1 -P 4 bash -c '
+            curl --fail --silent --show-error \
+              --retry 3 --retry-delay 2 --retry-all-errors \
+              --connect-timeout 15 --max-time 120 \
+              -o /dev/null "$1"
+          ' _
+
+          {
+            echo '## Image CDN prewarm'
+            echo
+            echo "- Public notes checked: $count"
+            echo "- Image variants warmed: $total"
+            echo "- Completed at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          } >> "$GITHUB_STEP_SUMMARY"
