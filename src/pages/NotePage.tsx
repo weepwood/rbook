@@ -89,7 +89,12 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
 
+  useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -102,10 +107,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     }
 
     window.addEventListener('keydown', handleKey)
-    return () => {
-      window.removeEventListener('keydown', handleKey)
-      document.body.style.overflow = previousOverflow
-    }
+    return () => window.removeEventListener('keydown', handleKey)
   }, [closeDetail, imageIndex, images.length])
 
   async function handleLike() {
