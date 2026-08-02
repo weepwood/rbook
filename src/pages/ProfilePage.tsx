@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { BarChart3, Bookmark, Camera, FileText, Heart, LoaderCircle, MapPin, MessageCircle, Save, Settings, ShieldCheck, UserRound, X } from 'lucide-react'
+import { BarChart3, Bookmark, Camera, FileText, Heart, LoaderCircle, Lock, MapPin, MessageCircle, Save, Settings, ShieldCheck, UserRound, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
@@ -7,10 +7,11 @@ import { fetchUserCollection, updateProfile } from '@/services/notes'
 import { fetchUserCommentedNotes, uploadAvatar } from '@/services/social'
 import type { Note } from '@/types'
 
-type Tab = 'notes' | 'favorites' | 'liked' | 'comments'
+type Tab = 'notes' | 'private' | 'favorites' | 'liked' | 'comments'
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
-  { id: 'notes', label: '笔记', icon: FileText },
+  { id: 'notes', label: '公开', icon: FileText },
+  { id: 'private', label: '私密', icon: Lock },
   { id: 'favorites', label: '收藏', icon: Bookmark },
   { id: 'liked', label: '赞过', icon: Heart },
   { id: 'comments', label: '评论过', icon: MessageCircle },
@@ -57,7 +58,7 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
       <div className="profile-empty">
         <div className="profile-orbit"><span>R</span></div>
         <h1>登录后建立你的内容空间</h1>
-        <p>发布笔记、收藏经验、关注创作者，并在多个设备间同步。</p>
+        <p>发布笔记、保存私密内容、收藏经验，并在多个设备间同步。</p>
         <button className="primary-button" onClick={onLogin}>{configured ? '登录 / 注册' : '查看登录演示'}</button>
       </div>
     )
@@ -105,8 +106,24 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
     }
   }
 
-  const emptyTitle = activeTab === 'notes' ? '发布第一篇笔记' : activeTab === 'favorites' ? '还没有收藏' : activeTab === 'liked' ? '还没有赞过的笔记' : '还没有参与评论'
-  const EmptyIcon = activeTab === 'notes' ? FileText : activeTab === 'favorites' ? Bookmark : activeTab === 'liked' ? Heart : MessageCircle
+  const emptyTitle = activeTab === 'notes'
+    ? '还没有公开笔记'
+    : activeTab === 'private'
+      ? '还没有私密笔记'
+      : activeTab === 'favorites'
+        ? '还没有收藏'
+        : activeTab === 'liked'
+          ? '还没有赞过的笔记'
+          : '还没有参与评论'
+  const EmptyIcon = activeTab === 'notes'
+    ? FileText
+    : activeTab === 'private'
+      ? Lock
+      : activeTab === 'favorites'
+        ? Bookmark
+        : activeTab === 'liked'
+          ? Heart
+          : MessageCircle
 
   return (
     <div className="profile-page">
@@ -143,6 +160,10 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
         ))}
       </section>
 
+      {activeTab === 'private' && (
+        <div className="private-collection-hint"><Lock size={16} /><span>这里的笔记和图片只对当前账号开放，不会出现在搜索、推荐或公开主页。</span></div>
+      )}
+
       {message && <p className="page-message">{message}</p>}
       {loading ? (
         <div className="state-panel"><LoaderCircle className="spin" /><span>正在加载内容…</span></div>
@@ -151,7 +172,11 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
           {notes.map((note) => <NoteCard key={note.id} note={note} userId={userId} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'profile' } })} />)}
         </section>
       ) : (
-        <div className="profile-content-empty"><EmptyIcon size={32} /><h2>{emptyTitle}</h2><p>{activeTab === 'notes' ? '把一个真实经验讲清楚，就可能帮助到另一个人。' : '在社区产生互动后，可随时回到这里查看。'}</p></div>
+        <div className="profile-content-empty">
+          <EmptyIcon size={32} />
+          <h2>{emptyTitle}</h2>
+          <p>{activeTab === 'private' ? '发布时选择“私密”，即可把内容保存到仅自己可见的空间。' : activeTab === 'notes' ? '发布公开笔记后，会展示在这里和你的公开主页。' : '在社区产生互动后，可随时回到这里查看。'}</p>
+        </div>
       )}
 
       {editing && (
