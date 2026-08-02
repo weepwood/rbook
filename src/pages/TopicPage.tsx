@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Clock3, Flame, Hash, LoaderCircle, Plus, RefreshCw, Sparkles } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
 import {
@@ -39,6 +39,7 @@ export function TopicPage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const topic = useMemo(() => cleanTopic(topicName), [topicName])
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const sentinelRef = useRef<HTMLDivElement>(null)
   const [sort, setSort] = useState<TopicSort>('hot')
   const [notes, setNotes] = useState<Note[]>([])
@@ -171,13 +172,14 @@ export function TopicPage({ onRequireAuth }: { onRequireAuth: () => void }) {
           ) : (
             <>
               <section className="masonry-feed topic-note-feed">
-                {notes.map((note) => (
+                {notes.map((note, index) => (
                   <NoteCard
                     key={note.id}
                     note={note}
                     userId={user?.id}
                     onRequireAuth={onRequireAuth}
-                    onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'explore' } })}
+                    onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'explore', backgroundLocation: location } })}
+                    priority={index < 6}
                   />
                 ))}
               </section>
