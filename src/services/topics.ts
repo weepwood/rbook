@@ -48,7 +48,7 @@ function starterTopics(limit: number, followed: Set<string>, excluded = new Set<
 
 export async function fetchTrendingTopics(limit = 12, windowDays = 30): Promise<TrendingTopic[]> {
   const safeLimit = Math.max(1, Math.min(limit, 50))
-  if (!supabase) return starterTopics(safeLimit, new Set())
+  if (!supabase) return starterTopics(safeLimit, new Set<string>())
   const db = supabase as any
   const [{ data, error }, followedResult] = await Promise.all([
     db.rpc('get_trending_topics', {
@@ -59,7 +59,7 @@ export async function fetchTrendingTopics(limit = 12, windowDays = 30): Promise<
   ])
   if (error) throw error
 
-  const followed = new Set((followedResult.data ?? []).map((row: any) => String(row.topic).toLowerCase()))
+  const followed = new Set<string>((followedResult.data ?? []).map((row: any) => String(row.topic).toLowerCase()))
   const topics: TrendingTopic[] = (data ?? []).map((row: any) => ({
     topic: String(row.topic),
     note_count: Number(row.note_count ?? 0),
@@ -70,7 +70,7 @@ export async function fetchTrendingTopics(limit = 12, windowDays = 30): Promise<
   }))
 
   if (topics.length >= safeLimit) return topics.slice(0, safeLimit)
-  const existing = new Set(topics.map((item) => item.topic.toLowerCase()))
+  const existing = new Set<string>(topics.map((item) => item.topic.toLowerCase()))
   return [...topics, ...starterTopics(safeLimit - topics.length, followed, existing)]
 }
 
