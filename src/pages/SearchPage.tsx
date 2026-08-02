@@ -160,7 +160,7 @@ export function SearchPage({ onRequireAuth }: { onRequireAuth: () => void }) {
                     key={item.name}
                     onClick={() => {
                       void recordSearchEvent({ query, resultType: 'topic', resultId: item.name, eventType: 'click' })
-                      setSearchParams({ q: item.name, type: 'note' })
+                      navigate(`/topic/${encodeURIComponent(item.name)}`)
                     }}
                   >
                     <span>#</span><div><strong>{item.name}</strong><small>{item.noteCount} 篇公开笔记</small></div>
