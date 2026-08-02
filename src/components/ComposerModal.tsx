@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { ArrowLeft, ArrowRight, Cloud, ImagePlus, LoaderCircle, MapPin, Save, Star, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Cloud, Globe2, ImagePlus, LoaderCircle, Lock, MapPin, Save, Star, Trash2, X } from 'lucide-react'
 import { publishDraft, saveDraft } from '@/services/composer'
+import type { NoteVisibility } from '@/types'
 import { prepareImage, type PreparedImage } from '@/utils/images'
 
 type Props = {
@@ -21,6 +22,7 @@ type StoredDraft = {
   content: string
   tagText: string
   location: string
+  visibility: NoteVisibility
   updatedAt: string
 }
 
@@ -34,6 +36,7 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
   const [content, setContent] = useState('')
   const [tagText, setTagText] = useState('')
   const [location, setLocation] = useState('')
+  const [visibility, setVisibility] = useState<NoteVisibility>('public')
   const [images, setImages] = useState<ComposerImage[]>([])
   const [busy, setBusy] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -52,13 +55,14 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
     const stored = localStorage.getItem(draftKey(userId))
     if (!stored) return
     try {
-      const draft = JSON.parse(stored) as StoredDraft
-      setDraftId(draft.draftId)
-      setTitle(draft.title)
-      setContent(draft.content)
-      setTagText(draft.tagText)
-      setLocation(draft.location)
-      setSavedAt(draft.updatedAt)
+      const draft = JSON.parse(stored) as Partial<StoredDraft>
+      setDraftId(draft.draftId ?? null)
+      setTitle(draft.title ?? '')
+      setContent(draft.content ?? '')
+      setTagText(draft.tagText ?? '')
+      setLocation(draft.location ?? '')
+      setVisibility(draft.visibility === 'private' ? 'private' : 'public')
+      setSavedAt(draft.updatedAt ?? null)
     } catch {
       localStorage.removeItem(draftKey(userId))
     }
@@ -68,19 +72,19 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
     if (!open) return
     const timer = window.setTimeout(() => {
       const updatedAt = new Date().toISOString()
-      const draft: StoredDraft = { draftId, title, content, tagText, location, updatedAt }
+      const draft: StoredDraft = { draftId, title, content, tagText, location, visibility, updatedAt }
       localStorage.setItem(draftKey(userId), JSON.stringify(draft))
       setSavedAt(updatedAt)
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [open, userId, draftId, title, content, tagText, location])
+  }, [open, userId, draftId, title, content, tagText, location, visibility])
 
   useEffect(() => {
     if (!open || (!title.trim() && !content.trim()) || busy) return
     let cancelled = false
     const timer = window.setTimeout(() => {
       setSavingDraft(true)
-      saveDraft({ authorId: userId, draftId, title, content, tags, location })
+      saveDraft({ authorId: userId, draftId, title, content, tags, location, visibility })
         .then((draft) => {
           if (!cancelled) {
             setDraftId(draft.id)
@@ -98,7 +102,7 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [open, userId, draftId, title, content, tags, location, busy])
+  }, [open, userId, draftId, title, content, tags, location, visibility, busy])
 
   if (!open) return null
 
@@ -154,11 +158,11 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
     setSavingDraft(true)
     setMessage('')
     try {
-      const draft = await saveDraft({ authorId: userId, draftId, title, content, tags, location })
+      const draft = await saveDraft({ authorId: userId, draftId, title, content, tags, location, visibility })
       setDraftId(draft.id)
       const now = new Date().toISOString()
       setSavedAt(now)
-      localStorage.setItem(draftKey(userId), JSON.stringify({ draftId: draft.id, title, content, tagText, location, updatedAt: now } satisfies StoredDraft))
+      localStorage.setItem(draftKey(userId), JSON.stringify({ draftId: draft.id, title, content, tagText, location, visibility, updatedAt: now } satisfies StoredDraft))
       setMessage('草稿已同步。')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '草稿同步失败，本地版本仍然保留。')
@@ -181,6 +185,7 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
         content,
         tags,
         location,
+        visibility,
         files: images,
         onProgress: (completed, total) => setUploadProgress({ completed, total }),
       })
@@ -190,6 +195,7 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
       setContent('')
       setTagText('')
       setLocation('')
+      setVisibility('public')
       setImages([])
       setSavedAt(null)
       localStorage.removeItem(draftKey(userId))
@@ -214,7 +220,7 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
           <div className="composer-header-actions">
             <button type="button" className="secondary-button compact" onClick={() => void persistDraft()} disabled={savingDraft || busy}><Save size={15} />保存草稿</button>
             <button form="composer-form" className="primary-button compact" disabled={busy || processing}>
-              {busy ? `上传 ${uploadProgress.completed}/${uploadProgress.total}` : '发布'}
+              {busy ? `上传 ${uploadProgress.completed}/${uploadProgress.total}` : visibility === 'private' ? '保存私密笔记' : '发布'}
             </button>
           </div>
         </header>
@@ -273,6 +279,19 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
             <MapPin size={18} />
             <input placeholder="添加地点" value={location} onChange={(event) => setLocation(event.target.value)} />
           </label>
+
+          <section className="visibility-picker" aria-label="笔记可见范围">
+            <button type="button" className={visibility === 'public' ? 'active' : ''} onClick={() => setVisibility('public')}>
+              <Globe2 size={18} />
+              <span><strong>公开</strong><small>进入推荐、搜索和个人公开主页</small></span>
+            </button>
+            <button type="button" className={visibility === 'private' ? 'active' : ''} onClick={() => setVisibility('private')}>
+              <Lock size={18} />
+              <span><strong>私密</strong><small>仅自己可见，图片使用受保护存储</small></span>
+            </button>
+          </section>
+
+          {visibility === 'private' && <p className="privacy-hint"><Lock size={14} />私密笔记不会产生点赞、收藏、评论或推荐数据。</p>}
           {message && <p className="form-message">{message}</p>}
         </form>
       </section>
