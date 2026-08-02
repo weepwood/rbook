@@ -37,6 +37,21 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   }, [authRequestKey])
 
   useEffect(() => {
+    if (searchParams.get('compose') !== '1') return
+    if (!user) {
+      setAuthOpen(true)
+      return
+    }
+
+    setComposerOpen(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('compose')
+    next.delete('topic')
+    const query = next.toString()
+    navigate({ pathname: window.location.pathname, search: query ? `?${query}` : '' }, { replace: true })
+  }, [searchParams, user, navigate])
+
+  useEffect(() => {
     if (!userId) {
       setUnreadCount(0)
       return
