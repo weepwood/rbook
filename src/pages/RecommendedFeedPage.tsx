@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Clock3, LoaderCircle, RefreshCw, Sparkles, UserRoundCheck } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { NoteCard, type NoteDismissReason } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
 import { fetchFilteredRecommendationPage, recordNoteFeedback } from '@/services/feedback'
@@ -23,6 +23,7 @@ function deduplicate(current: Note[], incoming: Note[]) {
 export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey: number; onRequireAuth: () => void }) {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [mode, setMode] = useState<FeedMode>('for_you')
   const [notes, setNotes] = useState<Note[]>([])
@@ -139,15 +140,16 @@ export function RecommendedFeedPage({ refreshKey, onRequireAuth }: { refreshKey:
         <>
           {error && <p className="page-message error">{error}</p>}
           <section className="masonry-feed">
-            {notes.map((note) => (
+            {notes.map((note, index) => (
               <NoteCard
                 key={note.id}
                 note={note}
                 userId={user?.id}
                 onRequireAuth={onRequireAuth}
-                onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: contentSource } })}
+                onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: contentSource, backgroundLocation: location } })}
                 trackImpression={!query}
                 onDismiss={!query && mode === 'for_you' ? dismissNote : undefined}
+                priority={index < 6}
               />
             ))}
           </section>
