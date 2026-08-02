@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Note } from '@/types'
 import { toggleLike } from '@/services/notes'
 import { recordContentEvent } from '@/services/social'
+import { optimizedImageSrcSet, optimizedImageUrl } from '@/utils/imageDelivery'
 
 export type NoteDismissReason = 'not_interested' | 'hide_author'
 
@@ -14,6 +15,7 @@ type Props = {
   onOpen: (note: Note) => void
   trackImpression?: boolean
   onDismiss?: (note: Note, reason: NoteDismissReason) => void
+  priority?: boolean
 }
 
 function formatCount(value: number) {
@@ -30,7 +32,7 @@ function mediaRatio(note: Note) {
   return Math.min(1.35, Math.max(.72, width / height))
 }
 
-export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression = false, onDismiss }: Props) {
+export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression = false, onDismiss, priority = false }: Props) {
   const navigate = useNavigate()
   const cardRef = useRef<HTMLElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -101,13 +103,26 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
   }
 
   const cover = note.cover_url ?? note.media[0]?.public_url
+  const coverUrl = optimizedImageUrl(cover, priority ? 640 : 480, 72)
+  const coverSrcSet = optimizedImageSrcSet(cover, [320, 480, 640], 72)
+  const avatarUrl = optimizedImageUrl(note.author.avatar_url, 64, 72)
   const currentNote = { ...note, viewer_liked: liked, like_count: likeCount }
   const coverStyle = { '--card-ratio': String(mediaRatio(note)) } as CSSProperties
 
   return (
     <article ref={cardRef} className={isPrivate ? 'note-card private-note-card' : 'note-card'}>
       <button className="cover-button" style={coverStyle} aria-label={`查看：${note.title}`} onClick={() => onOpen(currentNote)}>
-        {cover ? <img src={cover} alt={note.title} loading="lazy" decoding="async" /> : <div className="cover-placeholder" />}
+        {coverUrl ? (
+          <img
+            src={coverUrl}
+            srcSet={coverSrcSet}
+            sizes="(max-width: 900px) calc(50vw - 14px), 240px"
+            alt={note.title}
+            loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
+            decoding="async"
+          />
+        ) : <div className="cover-placeholder" />}
         <span className="cover-gradient" />
         {isPrivate && <span className="private-cover-badge"><Lock size={12} />仅自己可见</span>}
         {!isPrivate && note.recommendation_reason && <span className="recommendation-reason"><Sparkles size={12} />{note.recommendation_reason}</span>}
@@ -134,7 +149,7 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
         </div>
         <footer className="note-footer">
           <button className="author-chip" onClick={() => navigate(`/user/${note.author.username}`)} aria-label={`查看 ${note.author.display_name} 的主页`}>
-            {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" loading="lazy" decoding="async" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
+            {avatarUrl ? <img src={avatarUrl} alt="" loading="lazy" decoding="async" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
             <em>{note.author.display_name}</em>
           </button>
           {isPrivate ? (
