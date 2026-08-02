@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Bell, Compass, Home, LogOut, Menu, Plus, Search, ShieldCheck, UserRound, X } from 'lucide-react'
 import { NavLink, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
@@ -14,9 +14,18 @@ type Props = {
   authRequestKey: number
 }
 
+function isEditingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && (
+    target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.isContentEditable
+  )
+}
+
 export function AppShell({ children, onRefresh, authRequestKey }: Props) {
-  const { user, profile, signOut, configured, isAdmin, accountState } = useAuth()
+  const { user, profile, signOut, isAdmin, accountState } = useAuth()
   const userId = user?.id
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerTopic, setComposerTopic] = useState<string | null>(null)
@@ -36,6 +45,27 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   useEffect(() => {
     if (authRequestKey > 0) setAuthOpen(true)
   }, [authRequestKey])
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !isEditingTarget(event.target)) {
+        event.preventDefault()
+        searchInputRef.current?.focus()
+        return
+      }
+
+      if (event.key !== 'Escape') return
+      setNotificationOpen(false)
+      setMobileMenuOpen(false)
+      if (document.activeElement === searchInputRef.current && search) {
+        setSearch('')
+        searchInputRef.current?.blur()
+      }
+    }
+
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [search])
 
   useEffect(() => {
     if (searchParams.get('compose') !== '1') return
@@ -75,6 +105,7 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
     event.preventDefault()
     const query = search.trim()
     navigate(query ? `/search?q=${encodeURIComponent(query)}` : '/search')
+    searchInputRef.current?.blur()
   }
 
   function openComposer() {
@@ -114,14 +145,21 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
         <button className="mobile-menu-button icon-button" onClick={() => setMobileMenuOpen(true)} aria-label="打开菜单">
           <Menu size={21} />
         </button>
-        <NavLink className="brand" to="/">
+        <NavLink className="brand" to="/" aria-label="返回首页">
           <span className="brand-mark">R</span>
           <strong>RBook</strong>
         </NavLink>
-        <form className="search-box" onSubmit={submitSearch}>
+        <form className="search-box" onSubmit={submitSearch} role="search">
           <Search size={18} />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索笔记、用户和话题" />
-          {search && <button type="button" onClick={() => setSearch('')} aria-label="清空"><X size={16} /></button>}
+          <input
+            ref={searchInputRef}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="搜索 RBook"
+            aria-label="搜索笔记、用户和话题"
+          />
+          {!search && <kbd className="search-shortcut">/</kbd>}
+          {search && <button type="button" onClick={() => setSearch('')} aria-label="清空搜索"><X size={16} /></button>}
         </form>
         <div className="top-actions">
           <button className={`icon-button notification-trigger ${notificationOpen ? 'active' : ''}`} aria-label={`通知${unreadCount ? `，${unreadCount} 条未读` : ''}`} onClick={openNotifications}>
@@ -139,9 +177,10 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
         </div>
       </header>
 
+      {mobileMenuOpen && <button className="mobile-menu-backdrop" aria-label="关闭菜单" onClick={() => setMobileMenuOpen(false)} />}
       <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <button className="mobile-close icon-button" onClick={() => setMobileMenuOpen(false)} aria-label="关闭菜单"><X size={20} /></button>
-        <nav>
+        <nav aria-label="主要导航">
           {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={to === '/'} onClick={() => setMobileMenuOpen(false)}>
               <Icon size={21} />
@@ -151,28 +190,16 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
         </nav>
         <div className="sidebar-spacer" />
         {accountState === 'disabled' && <div className="account-disabled-note"><strong>账号已停用</strong><span>当前账号不能发布、评论或互动，请联系管理员。</span></div>}
-        <div className="sidebar-note">
-          <strong>{configured ? 'Supabase 已连接' : '演示模式'}</strong>
-          <span>{configured ? '认证、社区互动、日志与图片存储已启用' : '配置环境变量后切换真实数据'}</span>
-        </div>
-        {user && (
-          <button className="signout-button" onClick={signOut}><LogOut size={18} />退出登录</button>
-        )}
-        <footer>
-          <span>关于 RBook</span>
-          <span>隐私</span>
-          <span>社区规范</span>
-          <small>© 2026 RBook</small>
-        </footer>
+        {user && <button className="signout-button" onClick={signOut}><LogOut size={18} />退出登录</button>}
       </aside>
 
       <main className="main-content">{children}</main>
 
-      <nav className="mobile-tabbar">
+      <nav className="mobile-tabbar" aria-label="移动端导航">
         {navItems.slice(0, 2).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'}><Icon size={21} /><span>{label}</span></NavLink>
         ))}
-        <button className="mobile-publish" onClick={openComposer}><Plus size={24} /></button>
+        <button className="mobile-publish" onClick={openComposer} aria-label="发布笔记"><Plus size={24} /></button>
         <NavLink to="/me"><UserRound size={21} /><span>我的</span></NavLink>
       </nav>
 
