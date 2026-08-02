@@ -1,0 +1,14 @@
+.note-card .tag-line button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.note-card .tag-line button:hover {
+  color: #526d91;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
