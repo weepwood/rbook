@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, LoaderCircle, MapPin, UserPlus, UserRoundCheck, Users, X } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
 import { fetchConnections, fetchFollowState, fetchProfileByUsername, fetchProfileNotes, recordContentEvent, toggleFollow } from '@/services/social'
@@ -11,6 +11,7 @@ type ConnectionKind = 'followers' | 'following'
 export function PublicProfilePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const { username = '' } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [notes, setNotes] = useState<Note[]>([])
@@ -111,7 +112,16 @@ export function PublicProfilePage({ onRequireAuth }: { onRequireAuth: () => void
 
       {notes.length ? (
         <section className="masonry-feed creator-feed">
-          {notes.map((note) => <NoteCard key={note.id} note={note} userId={user?.id} onRequireAuth={onRequireAuth} onOpen={(selected) => navigate(`/note/${selected.id}`)} />)}
+          {notes.map((note, index) => (
+            <NoteCard
+              key={note.id}
+              note={note}
+              userId={user?.id}
+              onRequireAuth={onRequireAuth}
+              priority={index < 6}
+              onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'profile', backgroundLocation: location } })}
+            />
+          ))}
         </section>
       ) : (
         <div className="profile-content-empty"><Users size={32} /><h2>还没有公开笔记</h2><p>发布内容后会展示在这里。</p></div>
