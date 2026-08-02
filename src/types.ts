@@ -1,5 +1,6 @@
 export type AccessLevel = 'member' | 'moderator' | 'administrator'
 export type AccountState = 'enabled' | 'disabled'
+export type NoteVisibility = 'public' | 'private'
 
 export type UserAccess = {
   user_id: string
@@ -26,6 +27,7 @@ export type NoteMedia = {
   id: string
   note_id: string
   storage_path: string
+  storage_bucket?: 'note-media' | 'private-note-media'
   public_url?: string
   width: number | null
   height: number | null
@@ -45,6 +47,7 @@ export type Note = {
   tags: string[]
   location: string | null
   cover_url: string | null
+  visibility: NoteVisibility
   created_at: string
   updated_at?: string
   published_at?: string | null
