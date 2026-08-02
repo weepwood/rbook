@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BarChart3, Bookmark, Camera, FileText, Heart, LoaderCircle, Lock, MapPin, MessageCircle, Save, Settings, ShieldCheck, UserRound, X } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
 import { fetchUserCollection, updateProfile } from '@/services/notes'
@@ -19,6 +19,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof FileText }> = [
 
 export function ProfilePage({ onLogin }: { onLogin: () => void }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, profile, accessLevel, configured, refreshProfile } = useAuth()
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [activeTab, setActiveTab] = useState<Tab>('notes')
@@ -169,7 +170,16 @@ export function ProfilePage({ onLogin }: { onLogin: () => void }) {
         <div className="state-panel"><LoaderCircle className="spin" /><span>正在加载内容…</span></div>
       ) : notes.length ? (
         <section className="masonry-feed profile-feed">
-          {notes.map((note) => <NoteCard key={note.id} note={note} userId={userId} onRequireAuth={onLogin} onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'profile' } })} />)}
+          {notes.map((note, index) => (
+            <NoteCard
+              key={note.id}
+              note={note}
+              userId={userId}
+              onRequireAuth={onLogin}
+              priority={index < 6}
+              onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'profile', backgroundLocation: location } })}
+            />
+          ))}
         </section>
       ) : (
         <div className="profile-content-empty">
