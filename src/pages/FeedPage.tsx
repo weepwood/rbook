@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LoaderCircle, RefreshCw } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { Flame, Hash, LoaderCircle, RefreshCw, TrendingUp } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
-import { NoteDetailModal } from '@/components/NoteDetailModal'
 import { useAuth } from '@/context/AuthContext'
 import { fetchFeed } from '@/services/notes'
+import { fetchTrendingTopics, type TrendingTopic } from '@/services/topics'
 import type { Note } from '@/types'
-
-const topics = ['推荐', '家居灵感', '效率工具', '一人食', '徒步', '知识管理', '城市漫游', '可视化']
 
 type Props = {
   mode?: 'home' | 'explore'
@@ -15,12 +13,18 @@ type Props = {
   onRequireAuth: () => void
 }
 
+function compactCount(value: number) {
+  if (value >= 10000) return `${(value / 10000).toFixed(value >= 100000 ? 0 : 1)}万`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
+  return String(value)
+}
+
 export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
   const { user } = useAuth()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [activeTopic, setActiveTopic] = useState(mode === 'explore' ? '效率工具' : '推荐')
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [notes, setNotes] = useState<Note[]>([])
-  const [selectedNote, setSelectedNote] = useState<Note | null>(null)
+  const [topics, setTopics] = useState<TrendingTopic[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const query = searchParams.get('q') ?? ''
@@ -29,51 +33,67 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
     let cancelled = false
     setLoading(true)
     setError('')
-    fetchFeed({ query, tag: activeTopic, viewerId: user?.id })
-      .then((data) => {
-        if (!cancelled) setNotes(data)
-      })
-      .catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : '加载失败')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [query, activeTopic, refreshKey, user?.id])
+    Promise.all([
+      fetchFeed({ query, viewerId: user?.id, limit: 40 }),
+      fetchTrendingTopics(12, 30),
+    ]).then(([nextNotes, nextTopics]) => {
+      if (cancelled) return
+      setNotes(nextNotes)
+      setTopics(nextTopics)
+    }).catch((reason) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : '加载失败')
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [query, refreshKey, user?.id])
 
   const title = useMemo(() => {
     if (query) return `“${query}” 的搜索结果`
-    return mode === 'explore' ? '发现更多具体经验' : '今天值得看看'
+    return mode === 'explore' ? '发现正在形成的社区话题' : '今天值得看看'
   }, [mode, query])
 
-  function chooseTopic(topic: string) {
-    setActiveTopic(topic)
-    if (query) setSearchParams({})
-  }
-
   return (
-    <div className="feed-page">
+    <div className="feed-page explore-page">
       <section className="feed-heading">
         <div>
           <p>{mode === 'explore' ? 'EXPLORE' : 'FOR YOU'}</p>
           <h1>{title}</h1>
         </div>
-        <span>持续更新真实、具体、有用的内容</span>
+        <span>话题热度根据近期发布、浏览、收藏与讨论动态计算</span>
       </section>
 
-      <div className="topic-tabs" role="tablist">
-        {topics.map((topic) => (
-          <button key={topic} className={activeTopic === topic ? 'active' : ''} onClick={() => chooseTopic(topic)}>
-            {topic}
-          </button>
-        ))}
-      </div>
+      {!query && topics.length > 0 && (
+        <section className="trending-topic-section">
+          <header><div><Flame size={19} /><h2>热议话题</h2></div><span>持续更新</span></header>
+          <div className="trending-topic-grid">
+            {topics.slice(0, 8).map((topic, index) => (
+              <button key={topic.topic} onClick={() => navigate(`/topic/${encodeURIComponent(topic.topic)}`)}>
+                <em>{String(index + 1).padStart(2, '0')}</em>
+                <span className="trending-topic-icon"><Hash size={18} /></span>
+                <span className="trending-topic-copy">
+                  <strong>{topic.topic}</strong>
+                  <small>{compactCount(topic.note_count)} 篇 · {compactCount(topic.interaction_count)} 互动</small>
+                </span>
+                <TrendingUp size={16} />
+              </button>
+            ))}
+          </div>
+          <div className="topic-chip-row">
+            {topics.slice(8).map((topic) => (
+              <button key={topic.topic} onClick={() => navigate(`/topic/${encodeURIComponent(topic.topic)}`)}>#{topic.topic}</button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="explore-note-heading">
+        <div><p>DISCOVER NOTES</p><h2>{query ? '匹配笔记' : '最新社区内容'}</h2></div>
+        <span>从不同话题里发现具体经验</span>
+      </section>
 
       {loading ? (
-        <div className="state-panel"><LoaderCircle className="spin" /><span>正在整理内容…</span></div>
+        <div className="feed-skeleton-grid">{Array.from({ length: 8 }, (_, index) => <span key={index} className="feed-skeleton" />)}</div>
       ) : error ? (
         <div className="state-panel error">
           <p>{error}</p>
@@ -84,14 +104,18 @@ export function FeedPage({ mode = 'home', refreshKey, onRequireAuth }: Props) {
       ) : (
         <section className="masonry-feed">
           {notes.map((note) => (
-            <NoteCard key={note.id} note={note} userId={user?.id} onRequireAuth={onRequireAuth} onOpen={setSelectedNote} />
+            <NoteCard
+              key={note.id}
+              note={note}
+              userId={user?.id}
+              onRequireAuth={onRequireAuth}
+              onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'explore' } })}
+            />
           ))}
         </section>
       )}
 
-      {selectedNote && (
-        <NoteDetailModal note={selectedNote} userId={user?.id} onRequireAuth={onRequireAuth} onClose={() => setSelectedNote(null)} />
-      )}
+      {loading && <span className="visually-hidden"><LoaderCircle className="spin" />正在加载</span>}
     </div>
   )
 }
