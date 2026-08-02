@@ -11,6 +11,7 @@ import '@/issue-1.css'
 import '@/admin-report.css'
 import '@/creator-analytics.css'
 import '@/privacy.css'
+import '@/topic-community.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
