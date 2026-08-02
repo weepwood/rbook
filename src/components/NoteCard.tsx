@@ -29,7 +29,7 @@ function mediaRatio(note: Note) {
   const width = Number(media?.width ?? 0)
   const height = Number(media?.height ?? 0)
   if (!width || !height) return .75
-  return Math.min(1.35, Math.max(.72, width / height))
+  return width / height
 }
 
 export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression = false, onDismiss, priority = false }: Props) {
@@ -41,11 +41,16 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
   const [liked, setLiked] = useState(Boolean(note.viewer_liked))
   const [likeCount, setLikeCount] = useState(note.like_count)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [coverRatio, setCoverRatio] = useState(() => mediaRatio(note))
 
   useEffect(() => {
     setLiked(Boolean(note.viewer_liked))
     setLikeCount(note.like_count)
   }, [note.viewer_liked, note.like_count])
+
+  useEffect(() => {
+    setCoverRatio(mediaRatio(note))
+  }, [note.id, note.media])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -126,7 +131,7 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
   const coverSrcSet = optimizedImageSrcSet(cover, [320, 480, 640], 72)
   const avatarUrl = optimizedImageUrl(note.author.avatar_url, 64, 72)
   const currentNote = { ...note, viewer_liked: liked, like_count: likeCount }
-  const coverStyle = { '--card-ratio': String(mediaRatio(note)) } as CSSProperties
+  const coverStyle = { '--card-ratio': String(coverRatio) } as CSSProperties
 
   return (
     <article
@@ -146,6 +151,10 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
             loading={priority ? 'eager' : 'lazy'}
             fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
+            onLoad={(event) => {
+              const { naturalWidth, naturalHeight } = event.currentTarget
+              if (naturalWidth > 0 && naturalHeight > 0) setCoverRatio(naturalWidth / naturalHeight)
+            }}
           />
         ) : <div className="cover-placeholder" />}
         <span className="cover-gradient" />
