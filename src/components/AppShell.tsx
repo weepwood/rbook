@@ -19,6 +19,7 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
   const userId = user?.id
   const [authOpen, setAuthOpen] = useState(false)
   const [composerOpen, setComposerOpen] = useState(false)
+  const [composerTopic, setComposerTopic] = useState<string | null>(null)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [notificationRefreshKey, setNotificationRefreshKey] = useState(0)
@@ -43,6 +44,7 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
       return
     }
 
+    setComposerTopic(searchParams.get('topic')?.trim() || null)
     setComposerOpen(true)
     const next = new URLSearchParams(searchParams)
     next.delete('compose')
@@ -80,7 +82,13 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
       setAuthOpen(true)
       return
     }
+    setComposerTopic(null)
     setComposerOpen(true)
+  }
+
+  function closeComposer() {
+    setComposerOpen(false)
+    setComposerTopic(null)
   }
 
   function openNotifications() {
@@ -182,7 +190,8 @@ export function AppShell({ children, onRefresh, authRequestKey }: Props) {
         <ComposerModal
           open={composerOpen}
           userId={user.id}
-          onClose={() => setComposerOpen(false)}
+          initialTopic={composerTopic}
+          onClose={closeComposer}
           onPublished={onRefresh}
         />
       )}
