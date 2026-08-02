@@ -1,0 +1,33 @@
+/* Preserve the complete note image instead of cropping it to a card preset. */
+.note-card .cover-button {
+  background: #f3f3f3;
+}
+
+.note-card .cover-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  transform: none;
+}
+
+.note-card:hover .cover-button img {
+  transform: none;
+  filter: brightness(.985);
+}
+
+.note-page-image-stage > img {
+  object-fit: contain;
+  object-position: center;
+}
+
+.gallery-thumbnails button {
+  background: #171717;
+}
+
+.gallery-thumbnails button img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
