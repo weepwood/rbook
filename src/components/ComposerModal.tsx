@@ -7,6 +7,7 @@ import { prepareImage, type PreparedImage } from '@/utils/images'
 type Props = {
   open: boolean
   userId: string
+  initialTopic?: string | null
   onClose: () => void
   onPublished: () => void
 }
@@ -30,7 +31,11 @@ function draftKey(userId: string) {
   return `rbook-composer-draft:${userId}`
 }
 
-export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
+function normalizeTopic(value?: string | null) {
+  return value?.trim().replace(/^#+/, '').slice(0, 60) ?? ''
+}
+
+export function ComposerModal({ open, userId, initialTopic, onClose, onPublished }: Props) {
   const [draftId, setDraftId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -67,6 +72,17 @@ export function ComposerModal({ open, userId, onClose, onPublished }: Props) {
       localStorage.removeItem(draftKey(userId))
     }
   }, [open, userId])
+
+  useEffect(() => {
+    if (!open) return
+    const topic = normalizeTopic(initialTopic)
+    if (!topic) return
+    setTagText((current) => {
+      const currentTags = current.split(/[，,\s]+/).map((item) => item.trim().toLowerCase()).filter(Boolean)
+      if (currentTags.includes(topic.toLowerCase())) return current
+      return [current.trim(), topic].filter(Boolean).join(' ')
+    })
+  }, [open, initialTopic])
 
   useEffect(() => {
     if (!open) return
