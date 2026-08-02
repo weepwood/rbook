@@ -60,7 +60,13 @@ export function ComposerModal({ open, userId, initialTopic, onClose, onPublished
     if (!open) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [open])
 
+  useEffect(() => {
+    if (!open) return
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busy) {
         event.preventDefault()
@@ -74,10 +80,7 @@ export function ComposerModal({ open, userId, initialTopic, onClose, onPublished
     }
 
     window.addEventListener('keydown', handleKey)
-    return () => {
-      window.removeEventListener('keydown', handleKey)
-      document.body.style.overflow = previousOverflow
-    }
+    return () => window.removeEventListener('keydown', handleKey)
   }, [open, busy, processing, onClose])
 
   useEffect(() => {
