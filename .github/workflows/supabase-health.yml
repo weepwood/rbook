@@ -1,0 +1,98 @@
+name: Supabase Database Health
+
+on:
+  schedule:
+    # Twice daily. Using minute 17 avoids the busiest top-of-hour window.
+    - cron: "17 1,13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-database-health
+  cancel-in-progress: false
+
+jobs:
+  database-health:
+    name: Query Supabase database
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository configuration
+        uses: actions/checkout@v4
+
+      - name: Load browser-safe Supabase configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f .env.production ]]; then
+            echo "::error::.env.production was not found."
+            exit 1
+          fi
+
+          supabase_url=$(grep -E '^VITE_SUPABASE_URL=' .env.production | tail -n 1 | cut -d= -f2-)
+          publishable_key=$(grep -E '^VITE_SUPABASE_PUBLISHABLE_KEY=' .env.production | tail -n 1 | cut -d= -f2-)
+
+          if [[ -z "${supabase_url}" || -z "${publishable_key}" ]]; then
+            echo "::error::Supabase URL or publishable key is missing from .env.production."
+            exit 1
+          fi
+
+          echo "SUPABASE_URL=${supabase_url%/}" >> "$GITHUB_ENV"
+          echo "SUPABASE_PUBLISHABLE_KEY=${publishable_key}" >> "$GITHUB_ENV"
+          echo "::add-mask::${publishable_key}"
+
+      - name: Run database health query
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          response_file=$(mktemp)
+          endpoint="${SUPABASE_URL}/rest/v1/notes?select=id&limit=1"
+
+          http_code=$(curl \
+            --silent \
+            --show-error \
+            --location \
+            --retry 3 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --connect-timeout 15 \
+            --max-time 45 \
+            --output "$response_file" \
+            --write-out "%{http_code}" \
+            --header "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+            --header "Accept: application/json" \
+            "$endpoint")
+
+          echo "Supabase Data API returned HTTP ${http_code}."
+
+          if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Supabase database health check failed with HTTP ${http_code}."
+            if command -v jq >/dev/null 2>&1; then
+              jq -c '{code, message, hint, details}' "$response_file" 2>/dev/null || true
+            fi
+            exit 1
+          fi
+
+          if ! jq -e 'type == "array"' "$response_file" >/dev/null; then
+            echo "::error::Supabase returned an unexpected response body."
+            exit 1
+          fi
+
+          row_count=$(jq 'length' "$response_file")
+          checked_at=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          {
+            echo "## Supabase database health"
+            echo ""
+            echo "- Status: healthy"
+            echo "- HTTP status: ${http_code}"
+            echo "- Rows sampled: ${row_count}"
+            echo "- Checked at: ${checked_at}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Database query completed successfully at ${checked_at}."
