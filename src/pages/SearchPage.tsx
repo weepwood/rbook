@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Hash, LoaderCircle, MapPin, Search, UserRound } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { NoteCard } from '@/components/NoteCard'
 import { useAuth } from '@/context/AuthContext'
 import { recordSearchEvent, searchRbook, type SearchKind, type SearchResults } from '@/services/search'
@@ -23,6 +23,7 @@ const emptyResults: SearchResults = {
 export function SearchPage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const query = searchParams.get('q')?.trim() ?? ''
   const requestedKind = searchParams.get('type') as SearchKind | null
@@ -174,15 +175,16 @@ export function SearchPage({ onRequireAuth }: { onRequireAuth: () => void }) {
             <section className="search-section">
               <header><Search size={19} /><h2>笔记</h2></header>
               <div className="masonry-feed">
-                {results.notes.map((note) => (
+                {results.notes.map((note, index) => (
                   <NoteCard
                     key={note.id}
                     note={note}
                     userId={user?.id}
                     onRequireAuth={onRequireAuth}
+                    priority={index < 6}
                     onOpen={(selected) => {
                       void recordSearchEvent({ query, resultType: 'note', resultId: selected.id, eventType: 'click' })
-                      navigate(`/note/${selected.id}`, { state: { source: 'search' } })
+                      navigate(`/note/${selected.id}`, { state: { source: 'search', backgroundLocation: location } })
                     }}
                   />
                 ))}
