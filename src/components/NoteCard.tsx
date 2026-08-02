@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { Bookmark, EyeOff, Heart, Lock, MessageCircle, MoreHorizontal, Sparkles, UserX } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { EyeOff, Heart, Lock, MoreHorizontal, Sparkles, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import type { Note } from '@/types'
-import { toggleFavorite, toggleLike } from '@/services/notes'
+import { toggleLike } from '@/services/notes'
 import { recordContentEvent } from '@/services/social'
 
 export type NoteDismissReason = 'not_interested' | 'hide_author'
@@ -22,14 +22,36 @@ function formatCount(value: number) {
   return String(value)
 }
 
+function mediaRatio(note: Note) {
+  const media = note.media[0]
+  const width = Number(media?.width ?? 0)
+  const height = Number(media?.height ?? 0)
+  if (!width || !height) return .75
+  return Math.min(1.35, Math.max(.72, width / height))
+}
+
 export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression = false, onDismiss }: Props) {
   const navigate = useNavigate()
   const cardRef = useRef<HTMLElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const isPrivate = note.visibility === 'private'
   const [liked, setLiked] = useState(Boolean(note.viewer_liked))
-  const [favorited, setFavorited] = useState(Boolean(note.viewer_favorited))
   const [likeCount, setLikeCount] = useState(note.like_count)
   const [menuOpen, setMenuOpen] = useState(false)
+
+  useEffect(() => {
+    setLiked(Boolean(note.viewer_liked))
+    setLikeCount(note.like_count)
+  }, [note.viewer_liked, note.like_count])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeMenu = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', closeMenu)
+    return () => window.removeEventListener('pointerdown', closeMenu)
+  }, [menuOpen])
 
   useEffect(() => {
     if (isPrivate || !trackImpression || !cardRef.current) return
@@ -72,19 +94,6 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
     }
   }
 
-  async function handleFavorite() {
-    if (isPrivate) return
-    if (!userId) return onRequireAuth()
-    const previous = favorited
-    setFavorited(!previous)
-    try {
-      await toggleFavorite(note.id, userId, previous)
-      if (!previous) await recordContentEvent(note.id, 'favorite')
-    } catch {
-      setFavorited(previous)
-    }
-  }
-
   function dismiss(reason: NoteDismissReason) {
     if (!userId) return onRequireAuth()
     setMenuOpen(false)
@@ -92,12 +101,13 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
   }
 
   const cover = note.cover_url ?? note.media[0]?.public_url
-  const currentNote = { ...note, viewer_liked: liked, viewer_favorited: favorited, like_count: likeCount }
+  const currentNote = { ...note, viewer_liked: liked, like_count: likeCount }
+  const coverStyle = { '--card-ratio': String(mediaRatio(note)) } as CSSProperties
 
   return (
     <article ref={cardRef} className={isPrivate ? 'note-card private-note-card' : 'note-card'}>
-      <button className="cover-button" aria-label={`查看：${note.title}`} onClick={() => onOpen(currentNote)}>
-        {cover ? <img src={cover} alt={note.title} loading="lazy" /> : <div className="cover-placeholder" />}
+      <button className="cover-button" style={coverStyle} aria-label={`查看：${note.title}`} onClick={() => onOpen(currentNote)}>
+        {cover ? <img src={cover} alt={note.title} loading="lazy" decoding="async" /> : <div className="cover-placeholder" />}
         <span className="cover-gradient" />
         {isPrivate && <span className="private-cover-badge"><Lock size={12} />仅自己可见</span>}
         {!isPrivate && note.recommendation_reason && <span className="recommendation-reason"><Sparkles size={12} />{note.recommendation_reason}</span>}
@@ -106,8 +116,8 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
         <div className="note-title-row">
           <button className="note-title-button" onClick={() => onOpen(currentNote)}><h3>{note.title}</h3></button>
           {!isPrivate && onDismiss && (
-            <div className="note-card-menu-wrap">
-              <button className="note-card-menu-trigger" onClick={() => setMenuOpen((open) => !open)} aria-label="内容选项"><MoreHorizontal size={17} /></button>
+            <div ref={menuRef} className="note-card-menu-wrap">
+              <button className="note-card-menu-trigger" onClick={() => setMenuOpen((open) => !open)} aria-label="内容选项" aria-expanded={menuOpen}><MoreHorizontal size={17} /></button>
               {menuOpen && (
                 <div className="note-card-menu">
                   <button onClick={() => dismiss('not_interested')}><EyeOff size={15} />不感兴趣</button>
@@ -123,17 +133,15 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
             : <button key={tag} onClick={() => navigate(`/topic/${encodeURIComponent(tag)}`)}>#{tag}</button>)}
         </div>
         <footer className="note-footer">
-          <button className="author-chip" onClick={() => onOpen(currentNote)}>
-            {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
+          <button className="author-chip" onClick={() => navigate(`/user/${note.author.username}`)} aria-label={`查看 ${note.author.display_name} 的主页`}>
+            {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" loading="lazy" decoding="async" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
             <em>{note.author.display_name}</em>
           </button>
           {isPrivate ? (
             <span className="private-card-note"><Lock size={13} />私密</span>
           ) : (
             <div className="card-actions">
-              <button className={liked ? 'active' : ''} onClick={() => void handleLike()} aria-label="点赞"><Heart size={17} fill={liked ? 'currentColor' : 'none'} /><span>{formatCount(likeCount)}</span></button>
-              <button aria-label="评论" onClick={() => onOpen(currentNote)}><MessageCircle size={17} /><span>{formatCount(note.comment_count)}</span></button>
-              <button className={favorited ? 'active' : ''} onClick={() => void handleFavorite()} aria-label="收藏"><Bookmark size={17} fill={favorited ? 'currentColor' : 'none'} /></button>
+              <button className={liked ? 'active' : ''} onClick={() => void handleLike()} aria-label={liked ? '取消点赞' : '点赞'}><Heart size={17} fill={liked ? 'currentColor' : 'none'} /><span>{formatCount(likeCount)}</span></button>
             </div>
           )}
         </footer>
