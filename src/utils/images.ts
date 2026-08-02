@@ -5,8 +5,8 @@ export type PreparedImage = {
   originalName: string
 }
 
-const MAX_EDGE = 2400
-const WEBP_QUALITY = 0.84
+const MAX_EDGE = 1800
+const WEBP_QUALITY = 0.78
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number) {
   return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality))
