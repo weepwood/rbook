@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { hydrateNotes, noteSelect } from '@/services/noteHydration'
 import type { CommentItem, CommentThread, Note, Profile, UserConnection } from '@/types'
 
 export type FeedMode = 'for_you' | 'following' | 'latest'
@@ -10,15 +11,6 @@ type RecommendationRow = {
   reason: string
 }
 
-const noteSelect = `
-  id,author_id,title,content,tags,location,cover_url,view_count,created_at,
-  profiles!notes_author_id_fkey (
-    id,username,display_name,avatar_url,bio,location,follower_count,following_count,note_count
-  ),
-  note_media (id,note_id,storage_path,width,height,sort_order),
-  likes ( count ),favorites ( count ),comments ( count )
-`
-
 function getSessionId() {
   const key = 'rbook-session-id'
   let value = localStorage.getItem(key)
@@ -27,49 +19,6 @@ function getSessionId() {
     localStorage.setItem(key, value)
   }
   return value
-}
-
-function publicMediaUrl(path: string) {
-  if (!supabase) return path
-  return supabase.storage.from('note-media').getPublicUrl(path).data.publicUrl
-}
-
-async function hydrateNotes(rows: any[], viewerId?: string, reasons = new Map<string, string>()): Promise<Note[]> {
-  const notes = (rows ?? []).map((row: any) => {
-    const media = (row.note_media ?? [])
-      .sort((a: any, b: any) => a.sort_order - b.sort_order)
-      .map((item: any) => ({ ...item, public_url: publicMediaUrl(item.storage_path) }))
-    return {
-      id: row.id,
-      author_id: row.author_id,
-      title: row.title,
-      content: row.content,
-      tags: row.tags ?? [],
-      location: row.location,
-      cover_url: row.cover_url ? publicMediaUrl(row.cover_url) : media[0]?.public_url ?? null,
-      created_at: row.created_at,
-      author: row.profiles as Profile,
-      media,
-      like_count: row.likes?.[0]?.count ?? 0,
-      favorite_count: row.favorites?.[0]?.count ?? 0,
-      comment_count: row.comments?.[0]?.count ?? 0,
-      view_count: Number(row.view_count ?? 0),
-      viewer_liked: false,
-      viewer_favorited: false,
-      recommendation_reason: reasons.get(row.id),
-    } satisfies Note
-  })
-
-  if (!supabase || !viewerId || notes.length === 0) return notes
-  const db = supabase as any
-  const ids = notes.map((note) => note.id)
-  const [likes, favorites] = await Promise.all([
-    db.from('likes').select('note_id').eq('user_id', viewerId).in('note_id', ids),
-    db.from('favorites').select('note_id').eq('user_id', viewerId).in('note_id', ids),
-  ])
-  const liked = new Set((likes.data ?? []).map((row: any) => row.note_id))
-  const saved = new Set((favorites.data ?? []).map((row: any) => row.note_id))
-  return notes.map((note) => ({ ...note, viewer_liked: liked.has(note.id), viewer_favorited: saved.has(note.id) }))
 }
 
 export async function fetchNotesByIds(ids: string[], viewerId?: string, reasons = new Map<string, string>()) {
@@ -194,7 +143,11 @@ export async function fetchProfileNotes(profileId: string, viewerId?: string) {
   if (!supabase) return []
   const db = supabase as any
   const { data, error } = await db.from('notes').select(noteSelect)
-    .eq('author_id', profileId).eq('status', 'published').eq('is_hidden', false).order('created_at', { ascending: false })
+    .eq('author_id', profileId)
+    .eq('status', 'published')
+    .eq('is_hidden', false)
+    .eq('visibility', 'public')
+    .order('created_at', { ascending: false })
   if (error) throw error
   return hydrateNotes(data ?? [], viewerId)
 }
