@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import type { NoteVisibility } from '@/types'
 import type { PreparedImage } from '@/utils/images'
 
 export type DraftInput = {
@@ -8,6 +9,7 @@ export type DraftInput = {
   content: string
   tags: string[]
   location?: string
+  visibility: NoteVisibility
 }
 
 export type PublishInput = DraftInput & {
@@ -24,6 +26,7 @@ export async function saveDraft(input: DraftInput) {
     content: input.content || ' ',
     tags: input.tags,
     location: input.location?.trim() || null,
+    visibility: input.visibility,
     status: 'draft',
     updated_at: new Date().toISOString(),
   }
@@ -61,6 +64,7 @@ export async function publishDraft(input: PublishInput) {
   const client = supabase
   const db = client as any
   const draft = await saveDraft(input)
+  const storageBucket = input.visibility === 'private' ? 'private-note-media' : 'note-media'
   const uploadedPaths: string[] = []
   const mediaRows: Array<Record<string, unknown>> = new Array(input.files.length)
   let cursor = 0
@@ -73,7 +77,7 @@ export async function publishDraft(input: PublishInput) {
       const asset = input.files[index]
       const extension = asset.file.name.split('.').pop()?.toLowerCase() || 'webp'
       const storagePath = `${input.authorId}/${draft.id}/${crypto.randomUUID()}.${extension}`
-      const { error } = await client.storage.from('note-media').upload(storagePath, asset.file, {
+      const { error } = await client.storage.from(storageBucket).upload(storagePath, asset.file, {
         cacheControl: '31536000',
         upsert: false,
         contentType: asset.file.type,
@@ -83,6 +87,7 @@ export async function publishDraft(input: PublishInput) {
       mediaRows[index] = {
         note_id: draft.id,
         storage_path: storagePath,
+        storage_bucket: storageBucket,
         sort_order: index,
         width: asset.width,
         height: asset.height,
@@ -113,6 +118,7 @@ export async function publishDraft(input: PublishInput) {
         content,
         tags: input.tags,
         location: input.location?.trim() || null,
+        visibility: input.visibility,
         cover_url: mediaRows[0]?.storage_path ?? null,
         status: 'published',
         published_at: publishedAt,
@@ -127,7 +133,7 @@ export async function publishDraft(input: PublishInput) {
     return draft.id
   } catch (error) {
     try {
-      if (uploadedPaths.length > 0) await client.storage.from('note-media').remove(uploadedPaths)
+      if (uploadedPaths.length > 0) await client.storage.from(storageBucket).remove(uploadedPaths)
     } catch {
       // A scheduled storage cleanup can remove any remaining temporary files.
     }
