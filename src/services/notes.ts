@@ -1,6 +1,7 @@
 import { demoNotes } from '@/data/demo'
 import { supabase } from '@/lib/supabase'
-import type { CommentItem, Note, Profile } from '@/types'
+import { hydrateNotes, noteSelect } from '@/services/noteHydration'
+import type { CommentItem, Note, NoteVisibility, Profile } from '@/types'
 
 type FeedOptions = {
   query?: string
@@ -9,82 +10,7 @@ type FeedOptions = {
   viewerId?: string
 }
 
-type CollectionKind = 'notes' | 'favorites' | 'liked'
-
-const noteSelect = `
-  id,
-  author_id,
-  title,
-  content,
-  tags,
-  location,
-  cover_url,
-  created_at,
-  profiles!notes_author_id_fkey (
-    id,
-    username,
-    display_name,
-    avatar_url,
-    bio,
-    location,
-    follower_count,
-    following_count,
-    note_count
-  ),
-  note_media (
-    id,
-    note_id,
-    storage_path,
-    width,
-    height,
-    sort_order
-  ),
-  likes ( count ),
-  comments ( count )
-`
-
-function publicMediaUrl(path: string) {
-  if (!supabase) return path
-  return supabase.storage.from('note-media').getPublicUrl(path).data.publicUrl
-}
-
-async function hydrateNotes(rows: any[], viewerId?: string): Promise<Note[]> {
-  const notes = (rows ?? []).map((row: any) => {
-    const author = row.profiles as Profile
-    const media = (row.note_media ?? [])
-      .sort((a: any, b: any) => a.sort_order - b.sort_order)
-      .map((item: any) => ({ ...item, public_url: publicMediaUrl(item.storage_path) }))
-
-    return {
-      id: row.id,
-      author_id: row.author_id,
-      title: row.title,
-      content: row.content,
-      tags: row.tags ?? [],
-      location: row.location,
-      cover_url: row.cover_url ? publicMediaUrl(row.cover_url) : media[0]?.public_url ?? null,
-      created_at: row.created_at,
-      author,
-      media,
-      like_count: row.likes?.[0]?.count ?? 0,
-      comment_count: row.comments?.[0]?.count ?? 0,
-      favorite_count: 0,
-      viewer_liked: false,
-      viewer_favorited: false,
-    } satisfies Note
-  })
-
-  if (!supabase || !viewerId || notes.length === 0) return notes
-  const ids = notes.map((note) => note.id)
-  const db = supabase as any
-  const [likesResult, favoritesResult] = await Promise.all([
-    db.from('likes').select('note_id').eq('user_id', viewerId).in('note_id', ids),
-    db.from('favorites').select('note_id').eq('user_id', viewerId).in('note_id', ids),
-  ])
-  const liked = new Set((likesResult.data ?? []).map((row: any) => row.note_id))
-  const favorited = new Set((favoritesResult.data ?? []).map((row: any) => row.note_id))
-  return notes.map((note) => ({ ...note, viewer_liked: liked.has(note.id), viewer_favorited: favorited.has(note.id) }))
-}
+type CollectionKind = 'notes' | 'private' | 'favorites' | 'liked'
 
 export async function fetchFeed(options: FeedOptions = {}): Promise<Note[]> {
   if (!supabase) {
@@ -107,6 +33,7 @@ export async function fetchFeed(options: FeedOptions = {}): Promise<Note[]> {
     .select(noteSelect)
     .eq('status', 'published')
     .eq('is_hidden', false)
+    .eq('visibility', 'public')
     .order('created_at', { ascending: false })
     .limit(options.limit ?? 40)
 
@@ -137,15 +64,16 @@ async function fetchNotesByIds(ids: string[], viewerId?: string) {
 }
 
 export async function fetchUserCollection(userId: string, kind: CollectionKind): Promise<Note[]> {
-  if (!supabase) return kind === 'notes' ? demoNotes : demoNotes.slice(0, 2)
+  if (!supabase) return kind === 'notes' ? demoNotes : kind === 'private' ? [] : demoNotes.slice(0, 2)
   const db = supabase as any
 
-  if (kind === 'notes') {
+  if (kind === 'notes' || kind === 'private') {
     const { data, error } = await db
       .from('notes')
       .select(noteSelect)
       .eq('author_id', userId)
       .eq('status', 'published')
+      .eq('visibility', kind === 'private' ? 'private' : 'public')
       .order('created_at', { ascending: false })
     if (error) throw error
     return hydrateNotes(data ?? [], userId)
@@ -167,7 +95,7 @@ export async function fetchComments(noteId: string): Promise<CommentItem[]> {
   const { data, error } = await db
     .from('comments')
     .select(`
-      id,note_id,author_id,parent_id,content,created_at,updated_at,
+      id,note_id,author_id,parent_id,content,created_at,updated_at,like_count,reply_count,
       profiles!comments_author_id_fkey (id,username,display_name,avatar_url)
     `)
     .eq('note_id', noteId)
@@ -183,6 +111,8 @@ export async function fetchComments(noteId: string): Promise<CommentItem[]> {
     content: row.content,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    like_count: Number(row.like_count ?? 0),
+    reply_count: Number(row.reply_count ?? 0),
     author: row.profiles,
   }))
 }
@@ -267,10 +197,13 @@ export async function publishNote(input: {
   content: string
   tags: string[]
   location?: string
+  visibility?: NoteVisibility
   files: File[]
 }) {
   if (!supabase) throw new Error('请先配置 Supabase 环境变量。')
   const db = supabase as any
+  const visibility = input.visibility ?? 'public'
+  const storageBucket = visibility === 'private' ? 'private-note-media' : 'note-media'
   const { data: note, error: noteError } = await db
     .from('notes')
     .insert({
@@ -279,6 +212,7 @@ export async function publishNote(input: {
       content: input.content,
       tags: input.tags,
       location: input.location || null,
+      visibility,
       status: 'published',
     })
     .select('id')
@@ -292,12 +226,12 @@ export async function publishNote(input: {
       const file = input.files[index]
       const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
       const storagePath = `${input.authorId}/${note.id}/${crypto.randomUUID()}.${extension}`
-      const { error: uploadError } = await supabase.storage.from('note-media').upload(storagePath, file, {
+      const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, file, {
         cacheControl: '31536000',
         upsert: false,
       })
       if (uploadError) throw uploadError
-      mediaRows.push({ note_id: note.id, storage_path: storagePath, sort_order: index })
+      mediaRows.push({ note_id: note.id, storage_path: storagePath, storage_bucket: storageBucket, sort_order: index })
     }
 
     if (mediaRows.length) {
