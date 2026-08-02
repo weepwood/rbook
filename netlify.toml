@@ -5,6 +5,9 @@
 [build.environment]
   NODE_VERSION = "22"
 
+[images]
+  remote_images = ["https://cnrpcabxrurvhdzohsxz\\.supabase\\.co/storage/v1/object/public/.*"]
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
