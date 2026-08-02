@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import type { Note, Profile } from '@/types'
+import type { Note, NoteMedia, Profile } from '@/types'
 
 export const noteSelect = `
   id,
@@ -47,16 +47,21 @@ export const noteSelect = `
 
 type SignedUrlMap = Map<string, string>
 
-async function createPrivateSignedUrls(rows: any[]): Promise<SignedUrlMap> {
+type RawMedia = Partial<NoteMedia> & {
+  storage_path: string
+  storage_bucket?: string | null
+}
+
+async function createPrivateSignedUrls(mediaRows: RawMedia[]): Promise<SignedUrlMap> {
   const result = new Map<string, string>()
   if (!supabase) return result
 
   const paths = Array.from(new Set(
-    rows.flatMap((row: any) => (row.note_media ?? [])
-      .filter((item: any) => (item.storage_bucket ?? (row.visibility === 'private' ? 'private-note-media' : 'note-media')) === 'private-note-media')
-      .map((item: any) => item.storage_path)
-      .filter(Boolean)),
-  )) as string[]
+    mediaRows
+      .filter((item) => item.storage_bucket === 'private-note-media')
+      .map((item) => item.storage_path)
+      .filter(Boolean),
+  ))
 
   if (!paths.length) return result
 
@@ -75,25 +80,83 @@ function resolveMediaUrl(path: string, bucket: string, signedUrls: SignedUrlMap)
   return supabase.storage.from('note-media').getPublicUrl(path).data.publicUrl
 }
 
+function normalizeMedia(item: any, visibility: 'public' | 'private', signedUrls: SignedUrlMap): NoteMedia {
+  const storageBucket = item.storage_bucket ?? (visibility === 'private' ? 'private-note-media' : 'note-media')
+  return {
+    ...item,
+    storage_bucket: storageBucket,
+    width: item.width ?? null,
+    height: item.height ?? null,
+    sort_order: Number(item.sort_order ?? 0),
+    public_url: resolveMediaUrl(item.storage_path, storageBucket, signedUrls) ?? undefined,
+  } as NoteMedia
+}
+
+export async function hydrateNoteCards(
+  rows: any[],
+  reasons = new Map<string, string>(),
+): Promise<Note[]> {
+  const normalizedMediaRows = (rows ?? []).flatMap((row: any) => {
+    if (!row.media?.storage_path) return []
+    const visibility = row.visibility === 'private' ? 'private' : 'public'
+    return [{
+      ...row.media,
+      storage_bucket: row.media.storage_bucket ?? (visibility === 'private' ? 'private-note-media' : 'note-media'),
+    }]
+  }) as RawMedia[]
+  const signedUrls = await createPrivateSignedUrls(normalizedMediaRows)
+
+  return (rows ?? []).map((row: any) => {
+    const visibility = row.visibility === 'private' ? 'private' : 'public'
+    const media = row.media?.storage_path ? [normalizeMedia(row.media, visibility, signedUrls)] : []
+    const coverBucket = media[0]?.storage_bucket ?? (visibility === 'private' ? 'private-note-media' : 'note-media')
+    const coverUrl = media[0]?.public_url
+      ?? (row.cover_url ? resolveMediaUrl(row.cover_url, coverBucket, signedUrls) : null)
+
+    return {
+      id: row.id,
+      author_id: row.author_id,
+      title: row.title,
+      content: '',
+      tags: row.tags ?? [],
+      location: row.location,
+      cover_url: coverUrl,
+      visibility,
+      view_count: Number(row.view_count ?? 0),
+      created_at: row.created_at,
+      published_at: row.published_at,
+      status: row.status,
+      author: row.author as Profile,
+      media,
+      like_count: Number(row.like_count ?? 0),
+      favorite_count: Number(row.favorite_count ?? 0),
+      comment_count: Number(row.comment_count ?? 0),
+      viewer_liked: Boolean(row.viewer_liked),
+      viewer_favorited: Boolean(row.viewer_favorited),
+      recommendation_reason: reasons.get(row.id),
+    } satisfies Note
+  })
+}
+
 export async function hydrateNotes(
   rows: any[],
   viewerId?: string,
   reasons = new Map<string, string>(),
 ): Promise<Note[]> {
-  const signedUrls = await createPrivateSignedUrls(rows ?? [])
+  const normalizedMediaRows = (rows ?? []).flatMap((row: any) => {
+    const visibility = row.visibility === 'private' ? 'private' : 'public'
+    return (row.note_media ?? []).map((item: any) => ({
+      ...item,
+      storage_bucket: item.storage_bucket ?? (visibility === 'private' ? 'private-note-media' : 'note-media'),
+    }))
+  }) as RawMedia[]
+  const signedUrls = await createPrivateSignedUrls(normalizedMediaRows)
 
   const notes = (rows ?? []).map((row: any) => {
     const visibility = row.visibility === 'private' ? 'private' : 'public'
     const media = (row.note_media ?? [])
       .sort((a: any, b: any) => a.sort_order - b.sort_order)
-      .map((item: any) => {
-        const storageBucket = item.storage_bucket ?? (visibility === 'private' ? 'private-note-media' : 'note-media')
-        return {
-          ...item,
-          storage_bucket: storageBucket,
-          public_url: resolveMediaUrl(item.storage_path, storageBucket, signedUrls) ?? undefined,
-        }
-      })
+      .map((item: any) => normalizeMedia(item, visibility, signedUrls))
 
     const coverBucket = media[0]?.storage_bucket ?? (visibility === 'private' ? 'private-note-media' : 'note-media')
     const coverUrl = media[0]?.public_url
