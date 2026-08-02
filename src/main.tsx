@@ -10,6 +10,7 @@ import '@/layout-fixes.css'
 import '@/issue-1.css'
 import '@/admin-report.css'
 import '@/creator-analytics.css'
+import '@/privacy.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
