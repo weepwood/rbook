@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { hydrateNotes, noteSelect } from '@/services/noteHydration'
+import { hydrateNoteCards, hydrateNotes, noteSelect } from '@/services/noteHydration'
 import type { CommentItem, CommentThread, Note, Profile, UserConnection } from '@/types'
 
 export type FeedMode = 'for_you' | 'following' | 'latest'
@@ -11,6 +11,14 @@ type RecommendationRow = {
   reason: string
 }
 
+type DetailCacheEntry = {
+  expiresAt: number
+  promise: Promise<Note | null>
+}
+
+const detailCache = new Map<string, DetailCacheEntry>()
+const DETAIL_CACHE_TTL = 2 * 60 * 1000
+
 function getSessionId() {
   const key = 'rbook-session-id'
   let value = localStorage.getItem(key)
@@ -21,19 +29,63 @@ function getSessionId() {
   return value
 }
 
-export async function fetchNotesByIds(ids: string[], viewerId?: string, reasons = new Map<string, string>()) {
+function detailCacheKey(noteId: string, viewerId?: string) {
+  return `${viewerId ?? 'anon'}:${noteId}`
+}
+
+export async function fetchNotesByIds(ids: string[], _viewerId?: string, reasons = new Map<string, string>()) {
   if (!supabase || ids.length === 0) return []
+  const uniqueIds = Array.from(new Set(ids))
   const db = supabase as any
-  const { data, error } = await db.from('notes').select(noteSelect).in('id', ids).eq('status', 'published').eq('is_hidden', false)
+  const { data, error } = await db.rpc('get_note_cards_by_ids', { p_note_ids: uniqueIds })
   if (error) throw error
-  const hydrated = await hydrateNotes(data ?? [], viewerId, reasons)
+  const notes = await hydrateNoteCards(data ?? [], reasons)
   const order = new Map(ids.map((id, index) => [id, index]))
-  return hydrated.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  return notes.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+}
+
+export function invalidateNoteDetailCache(noteId?: string) {
+  if (!noteId) {
+    detailCache.clear()
+    return
+  }
+  for (const key of detailCache.keys()) {
+    if (key.endsWith(`:${noteId}`)) detailCache.delete(key)
+  }
 }
 
 export async function fetchNoteById(noteId: string, viewerId?: string) {
-  const [note] = await fetchNotesByIds([noteId], viewerId)
-  return note ?? null
+  if (!supabase || !noteId) return null
+  const key = detailCacheKey(noteId, viewerId)
+  const cached = detailCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.promise
+  if (cached) detailCache.delete(key)
+
+  const db = supabase as any
+  const promise = db
+    .from('notes')
+    .select(noteSelect)
+    .eq('id', noteId)
+    .eq('status', 'published')
+    .eq('is_hidden', false)
+    .maybeSingle()
+    .then(async ({ data, error }: { data: any; error: any }) => {
+      if (error) throw error
+      if (!data) return null
+      const [note] = await hydrateNotes([data], viewerId)
+      return note ?? null
+    })
+    .catch((error: unknown) => {
+      detailCache.delete(key)
+      throw error
+    })
+
+  detailCache.set(key, { expiresAt: Date.now() + DETAIL_CACHE_TTL, promise })
+  return promise
+}
+
+export function prefetchNoteById(noteId: string, viewerId?: string) {
+  void fetchNoteById(noteId, viewerId).catch(() => undefined)
 }
 
 export async function fetchRecommendedFeed(mode: FeedMode, viewerId?: string, limit = 40, offset = 0) {
@@ -142,14 +194,14 @@ export async function fetchProfileByUsername(username: string): Promise<Profile 
 export async function fetchProfileNotes(profileId: string, viewerId?: string) {
   if (!supabase) return []
   const db = supabase as any
-  const { data, error } = await db.from('notes').select(noteSelect)
+  const { data, error } = await db.from('notes').select('id')
     .eq('author_id', profileId)
     .eq('status', 'published')
     .eq('is_hidden', false)
     .eq('visibility', 'public')
     .order('created_at', { ascending: false })
   if (error) throw error
-  return hydrateNotes(data ?? [], viewerId)
+  return fetchNotesByIds((data ?? []).map((row: any) => row.id), viewerId)
 }
 
 export async function fetchFollowState(followerId: string, followingId: string) {
