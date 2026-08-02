@@ -3,7 +3,7 @@ import { EyeOff, Heart, Lock, MoreHorizontal, Sparkles, UserX } from 'lucide-rea
 import { useNavigate } from 'react-router-dom'
 import type { Note } from '@/types'
 import { toggleLike } from '@/services/notes'
-import { recordContentEvent } from '@/services/social'
+import { prefetchNoteById, recordContentEvent } from '@/services/social'
 import { optimizedImageSrcSet, optimizedImageUrl } from '@/utils/imageDelivery'
 
 export type NoteDismissReason = 'not_interested' | 'hide_author'
@@ -36,6 +36,7 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
   const navigate = useNavigate()
   const cardRef = useRef<HTMLElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const prefetchTimerRef = useRef<number | null>(null)
   const isPrivate = note.visibility === 'private'
   const [liked, setLiked] = useState(Boolean(note.viewer_liked))
   const [likeCount, setLikeCount] = useState(note.like_count)
@@ -54,6 +55,10 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
     window.addEventListener('pointerdown', closeMenu)
     return () => window.removeEventListener('pointerdown', closeMenu)
   }, [menuOpen])
+
+  useEffect(() => () => {
+    if (prefetchTimerRef.current !== null) window.clearTimeout(prefetchTimerRef.current)
+  }, [])
 
   useEffect(() => {
     if (isPrivate || !trackImpression || !cardRef.current) return
@@ -80,6 +85,20 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
       if (timer !== null) window.clearTimeout(timer)
     }
   }, [isPrivate, note.id, trackImpression])
+
+  function schedulePrefetch() {
+    if (isPrivate || prefetchTimerRef.current !== null) return
+    prefetchTimerRef.current = window.setTimeout(() => {
+      prefetchTimerRef.current = null
+      prefetchNoteById(note.id, userId)
+    }, 140)
+  }
+
+  function cancelPrefetch() {
+    if (prefetchTimerRef.current === null) return
+    window.clearTimeout(prefetchTimerRef.current)
+    prefetchTimerRef.current = null
+  }
 
   async function handleLike() {
     if (isPrivate) return
@@ -110,7 +129,13 @@ export function NoteCard({ note, userId, onRequireAuth, onOpen, trackImpression 
   const coverStyle = { '--card-ratio': String(mediaRatio(note)) } as CSSProperties
 
   return (
-    <article ref={cardRef} className={isPrivate ? 'note-card private-note-card' : 'note-card'}>
+    <article
+      ref={cardRef}
+      className={isPrivate ? 'note-card private-note-card' : 'note-card'}
+      onPointerEnter={schedulePrefetch}
+      onPointerLeave={cancelPrefetch}
+      onFocusCapture={schedulePrefetch}
+    >
       <button className="cover-button" style={coverStyle} aria-label={`查看：${note.title}`} onClick={() => onOpen(currentNote)}>
         {coverUrl ? (
           <img
