@@ -9,6 +9,7 @@ import { ProfilePage } from '@/pages/ProfilePage'
 import { PublicProfilePage } from '@/pages/PublicProfilePage'
 import { RecommendedFeedPage } from '@/pages/RecommendedFeedPage'
 import { SearchPage } from '@/pages/SearchPage'
+import { TopicPage } from '@/pages/TopicPage'
 
 export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/" element={<RecommendedFeedPage refreshKey={refreshKey} onRequireAuth={requireAuth} />} />
         <Route path="/search" element={<SearchPage onRequireAuth={requireAuth} />} />
         <Route path="/explore" element={<FeedPage mode="explore" refreshKey={refreshKey} onRequireAuth={requireAuth} />} />
+        <Route path="/topic/:topicName" element={<TopicPage onRequireAuth={requireAuth} />} />
         <Route path="/note/:noteId" element={<NotePage onRequireAuth={requireAuth} />} />
         <Route path="/user/:username" element={<PublicProfilePage onRequireAuth={requireAuth} />} />
         <Route path="/me" element={<ProfilePage onLogin={requireAuth} />} />
