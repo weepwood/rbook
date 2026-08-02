@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
 import { AdminPage } from '@/pages/AdminPage'
 import { CreatorAnalyticsPage } from '@/pages/CreatorAnalyticsPage'
@@ -12,13 +12,16 @@ import { SearchPage } from '@/pages/SearchPage'
 import { TopicPage } from '@/pages/TopicPage'
 
 export default function App() {
+  const location = useLocation()
+  const routeState = location.state as { backgroundLocation?: typeof location } | null
+  const backgroundLocation = routeState?.backgroundLocation
   const [refreshKey, setRefreshKey] = useState(0)
   const [authRequestKey, setAuthRequestKey] = useState(0)
   const requireAuth = () => setAuthRequestKey((value) => value + 1)
 
   return (
     <AppShell onRefresh={() => setRefreshKey((value) => value + 1)} authRequestKey={authRequestKey}>
-      <Routes>
+      <Routes location={backgroundLocation ?? location}>
         <Route path="/" element={<RecommendedFeedPage refreshKey={refreshKey} onRequireAuth={requireAuth} />} />
         <Route path="/search" element={<SearchPage onRequireAuth={requireAuth} />} />
         <Route path="/explore" element={<FeedPage mode="explore" refreshKey={refreshKey} onRequireAuth={requireAuth} />} />
@@ -29,6 +32,12 @@ export default function App() {
         <Route path="/me/analytics" element={<CreatorAnalyticsPage onLogin={requireAuth} />} />
         <Route path="/admin" element={<AdminPage />} />
       </Routes>
+
+      {backgroundLocation && (
+        <Routes>
+          <Route path="/note/:noteId" element={<NotePage onRequireAuth={requireAuth} />} />
+        </Routes>
+      )}
     </AppShell>
   )
 }
