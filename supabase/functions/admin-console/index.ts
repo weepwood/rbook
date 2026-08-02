@@ -83,7 +83,7 @@ Deno.serve(async (req: Request) => {
 
     const [profilesResult, notesResult, commentsResult, pendingResult, logsResult, recentResult, reportsResult] = await Promise.all([
       admin.from("profiles").select("id", { count: "exact", head: true }),
-      admin.from("notes").select("id", { count: "exact", head: true }).eq("status", "published").eq("is_hidden", false),
+      admin.from("notes").select("id", { count: "exact", head: true }).eq("status", "published").eq("visibility", "public").eq("is_hidden", false),
       admin.from("comments").select("id", { count: "exact", head: true }).is("deleted_at", null).eq("is_hidden", false),
       admin.from("content_reports").select("id", { count: "exact", head: true }).eq("review_state", "pending"),
       admin.from("access_logs").select("created_at,path,status_code,duration_ms,session_id,country").gte("created_at", start14.toISOString()).order("created_at", { ascending: true }).limit(10000),
@@ -161,8 +161,15 @@ Deno.serve(async (req: Request) => {
     detail = { access_level: accessLevel, state };
   } else if (action === "set_note_visibility") {
     const hidden = Boolean(body.hidden);
-    const { error } = await admin.from("notes").update({ is_hidden: hidden, moderation_reason: hidden ? String(body.reason ?? "管理员隐藏") : null }).eq("id", targetId);
+    const { data: updatedNote, error } = await admin
+      .from("notes")
+      .update({ is_hidden: hidden, moderation_reason: hidden ? String(body.reason ?? "管理员隐藏") : null })
+      .eq("id", targetId)
+      .eq("visibility", "public")
+      .select("id")
+      .maybeSingle();
     if (error) return reply({ error: error.message }, 500, headers);
+    if (!updatedNote) return reply({ error: "public_note_not_found" }, 404, headers);
     detail = { hidden, reason: body.reason ?? null };
   } else if (action === "set_comment_visibility") {
     const hidden = Boolean(body.hidden);
