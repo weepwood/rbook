@@ -8,6 +8,7 @@ import { normalizeContentSource, recordAttributedContentEvent } from '@/services
 import { toggleFavorite, toggleLike } from '@/services/notes'
 import { fetchFollowState, fetchNoteById, toggleFollow } from '@/services/social'
 import type { Note } from '@/types'
+import { optimizedImageSrcSet, optimizedImageUrl } from '@/utils/imageDelivery'
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(value))
@@ -188,6 +189,9 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   if (!note) return null
 
   const activeImage = images[imageIndex]
+  const activeImageUrl = optimizedImageUrl(activeImage, 1440, 82)
+  const activeImageSrcSet = optimizedImageSrcSet(activeImage, [720, 1080, 1440, 1800], 82)
+  const authorAvatarUrl = optimizedImageUrl(note.author.avatar_url, 96, 78)
   const isPrivate = note.visibility === 'private'
 
   return (
@@ -199,7 +203,16 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
       <section className="note-page-shell" onMouseDown={(event) => event.stopPropagation()}>
         <div className="note-page-gallery">
           <div className="note-page-image-stage">
-            {activeImage ? <img src={activeImage} alt={note.title} decoding="async" /> : <div className="cover-placeholder" />}
+            {activeImageUrl ? (
+              <img
+                src={activeImageUrl}
+                srcSet={activeImageSrcSet}
+                sizes="(max-width: 900px) 100vw, 760px"
+                alt={note.title}
+                fetchPriority="high"
+                decoding="async"
+              />
+            ) : <div className="cover-placeholder" />}
             {isPrivate && <span className="private-gallery-badge"><Lock size={14} />私密图片</span>}
             {images.length > 1 && (
               <>
@@ -211,9 +224,14 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
           </div>
           {images.length > 1 && (
             <div className="gallery-thumbnails">
-              {images.map((image, index) => (
-                <button key={image} className={imageIndex === index ? 'active' : ''} onClick={() => setImageIndex(index)} aria-label={`查看第 ${index + 1} 张图片`}><img src={image} alt="" loading="lazy" decoding="async" /></button>
-              ))}
+              {images.map((image, index) => {
+                const thumbnailUrl = optimizedImageUrl(image, 120, 68)
+                return (
+                  <button key={image} className={imageIndex === index ? 'active' : ''} onClick={() => setImageIndex(index)} aria-label={`查看第 ${index + 1} 张图片`}>
+                    <img src={thumbnailUrl} alt="" loading="lazy" decoding="async" />
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -222,7 +240,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
           <div className="note-page-scroll">
             <header className="note-author-header">
               <button className="note-author-profile" onClick={() => navigate(`/user/${note.author.username}`)}>
-                {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" decoding="async" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
+                {authorAvatarUrl ? <img src={authorAvatarUrl} alt="" decoding="async" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
                 <div><strong>{note.author.display_name}</strong><small>@{note.author.username}</small></div>
               </button>
               {!isPrivate && user?.id !== note.author_id && (
