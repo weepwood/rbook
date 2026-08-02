@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Flag, Heart, LoaderCircle, MapPin, Share2, UserPlus, UserRoundCheck } from 'lucide-react'
+import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Flag, Heart, LoaderCircle, Lock, MapPin, Share2, UserPlus, UserRoundCheck } from 'lucide-react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { CommentSection } from '@/components/CommentSection'
 import { NoteCard } from '@/components/NoteCard'
@@ -32,6 +32,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const [busyFollow, setBusyFollow] = useState(false)
   const [likeCount, setLikeCount] = useState(0)
   const openedAt = useRef(Date.now())
+  const trackPublicNote = useRef(false)
   const source = normalizeContentSource((location.state as { source?: unknown } | null)?.source)
 
   useEffect(() => {
@@ -40,29 +41,41 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     setError('')
     setNotice('')
     setImageIndex(0)
-    Promise.all([
-      fetchNoteById(noteId, user?.id),
-      fetchRelatedNotes(noteId, user?.id, 10),
-    ]).then(async ([nextNote, nextRelated]) => {
+    setRelated([])
+    trackPublicNote.current = false
+
+    fetchNoteById(noteId, user?.id).then(async (nextNote) => {
+      if (!nextNote) throw new Error('这篇笔记不存在、已被隐藏，或你没有访问权限。')
       if (cancelled) return
-      if (!nextNote) throw new Error('这篇笔记不存在或暂不可见。')
+
       setNote(nextNote)
-      setRelated(nextRelated)
       setLiked(Boolean(nextNote.viewer_liked))
       setFavorited(Boolean(nextNote.viewer_favorited))
       setLikeCount(nextNote.like_count)
-      if (user && user.id !== nextNote.author_id) setFollowing(await fetchFollowState(user.id, nextNote.author_id))
-      openedAt.current = Date.now()
-      void recordAttributedContentEvent(noteId, 'open', source)
+      trackPublicNote.current = nextNote.visibility === 'public'
+
+      if (nextNote.visibility === 'public') {
+        const nextRelated = await fetchRelatedNotes(noteId, user?.id, 10)
+        if (!cancelled) setRelated(nextRelated)
+        if (user && user.id !== nextNote.author_id) {
+          const nextFollowing = await fetchFollowState(user.id, nextNote.author_id)
+          if (!cancelled) setFollowing(nextFollowing)
+        }
+        openedAt.current = Date.now()
+        void recordAttributedContentEvent(noteId, 'open', source)
+      } else {
+        setFollowing(false)
+      }
     }).catch((reason) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : '笔记加载失败。')
     }).finally(() => {
       if (!cancelled) setLoading(false)
     })
+
     return () => {
       cancelled = true
       const dwell = Date.now() - openedAt.current
-      if (dwell > 1500) void recordAttributedContentEvent(noteId, 'dwell', source, dwell)
+      if (trackPublicNote.current && dwell > 1500) void recordAttributedContentEvent(noteId, 'dwell', source, dwell)
     }
   }, [noteId, user?.id, source])
 
@@ -75,7 +88,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
 
   async function handleLike() {
     if (!user) return onRequireAuth()
-    if (!note) return
+    if (!note || note.visibility === 'private') return
     const previous = liked
     setLiked(!previous)
     setLikeCount((value) => Math.max(0, value + (previous ? -1 : 1)))
@@ -91,7 +104,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
 
   async function handleFavorite() {
     if (!user) return onRequireAuth()
-    if (!note) return
+    if (!note || note.visibility === 'private') return
     const previous = favorited
     setFavorited(!previous)
     try {
@@ -105,7 +118,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
 
   async function handleFollow() {
     if (!user) return onRequireAuth()
-    if (!note || user.id === note.author_id || busyFollow) return
+    if (!note || note.visibility === 'private' || user.id === note.author_id || busyFollow) return
     setBusyFollow(true)
     const previous = following
     setFollowing(!previous)
@@ -121,7 +134,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   }
 
   async function share() {
-    if (!note) return
+    if (!note || note.visibility === 'private') return
     const url = window.location.href
     const canUseNativeShare = typeof navigator.share === 'function'
     try {
@@ -136,6 +149,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
 
   function openReport() {
     if (!user) return onRequireAuth()
+    if (note?.visibility === 'private') return
     setReportOpen(true)
   }
 
@@ -144,9 +158,10 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   if (!note) return null
 
   const activeImage = images[imageIndex]
+  const isPrivate = note.visibility === 'private'
 
   return (
-    <div className="note-page">
+    <div className={isPrivate ? 'note-page private-note-page' : 'note-page'}>
       <button className="note-page-back" onClick={() => navigate(-1)}><ArrowLeft size={18} />返回</button>
       {error && <p className="page-message error">{error}</p>}
       {notice && <p className="page-message">{notice}</p>}
@@ -155,6 +170,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
         <div className="note-page-gallery">
           <div className="note-page-image-stage">
             {activeImage ? <img src={activeImage} alt={note.title} /> : <div className="cover-placeholder" />}
+            {isPrivate && <span className="private-gallery-badge"><Lock size={14} />私密图片</span>}
             {images.length > 1 && (
               <>
                 <button className="gallery-arrow gallery-left" disabled={imageIndex === 0} onClick={() => setImageIndex((value) => value - 1)}><ChevronLeft /></button>
@@ -178,7 +194,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
               {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
               <div><strong>{note.author.display_name}</strong><small>@{note.author.username}</small></div>
             </button>
-            {user?.id !== note.author_id && (
+            {!isPrivate && user?.id !== note.author_id && (
               <button className={following ? 'follow-button following' : 'follow-button'} disabled={busyFollow} onClick={() => void handleFollow()}>
                 {following ? <UserRoundCheck size={16} /> : <UserPlus size={16} />}{following ? '已关注' : '关注'}
               </button>
@@ -186,28 +202,42 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
           </header>
 
           <article className="note-page-copy">
+            {isPrivate && <span className="private-title-badge"><Lock size={14} />仅自己可见</span>}
             <h1>{note.title}</h1>
             <p>{note.content}</p>
-            <div className="detail-tags">{note.tags.map((tag) => <button key={tag} onClick={() => navigate(`/search?q=${encodeURIComponent(tag)}&type=note`)}>#{tag}</button>)}</div>
+            <div className="detail-tags">
+              {note.tags.map((tag) => (
+                <button key={tag} disabled={isPrivate} onClick={() => navigate(`/search?q=${encodeURIComponent(tag)}&type=note`)}>#{tag}</button>
+              ))}
+            </div>
             <div className="detail-meta">
               <time>{formatDate(note.created_at)}</time>
               {note.location && <span><MapPin size={14} />{note.location}</span>}
-              <span>{note.view_count ?? 0} 次浏览</span>
+              {!isPrivate && <span>{note.view_count ?? 0} 次浏览</span>}
             </div>
           </article>
 
-          <div className="note-page-actions">
-            <button className={liked ? 'active' : ''} onClick={() => void handleLike()}><Heart size={21} fill={liked ? 'currentColor' : 'none'} />{likeCount}</button>
-            <button className={favorited ? 'active' : ''} onClick={() => void handleFavorite()}><Bookmark size={21} fill={favorited ? 'currentColor' : 'none'} />{favorited ? '已收藏' : '收藏'}</button>
-            <button onClick={() => void share()}><Share2 size={21} />分享</button>
-            <button onClick={openReport}><Flag size={19} />举报</button>
-          </div>
+          {isPrivate ? (
+            <div className="private-note-notice">
+              <Lock size={20} />
+              <div><strong>这是一篇私密笔记</strong><span>只有当前账号可以读取正文和图片，不会进入推荐、搜索、公开主页或社交互动。</span></div>
+            </div>
+          ) : (
+            <>
+              <div className="note-page-actions">
+                <button className={liked ? 'active' : ''} onClick={() => void handleLike()}><Heart size={21} fill={liked ? 'currentColor' : 'none'} />{likeCount}</button>
+                <button className={favorited ? 'active' : ''} onClick={() => void handleFavorite()}><Bookmark size={21} fill={favorited ? 'currentColor' : 'none'} />{favorited ? '已收藏' : '收藏'}</button>
+                <button onClick={() => void share()}><Share2 size={21} />分享</button>
+                <button onClick={openReport}><Flag size={19} />举报</button>
+              </div>
 
-          <CommentSection noteId={note.id} userId={user?.id} onRequireAuth={onRequireAuth} onCountChange={(count) => setNote((value) => value ? { ...value, comment_count: count } : value)} />
+              <CommentSection noteId={note.id} userId={user?.id} onRequireAuth={onRequireAuth} onCountChange={(count) => setNote((value) => value ? { ...value, comment_count: count } : value)} />
+            </>
+          )}
         </div>
       </section>
 
-      {related.length > 0 && (
+      {!isPrivate && related.length > 0 && (
         <section className="related-section">
           <header><div><p>MORE FOR YOU</p><h2>你可能还喜欢</h2></div><span>基于话题、作者与互动热度推荐</span></header>
           <div className="related-grid">
@@ -218,7 +248,7 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
         </section>
       )}
 
-      {user && (
+      {user && !isPrivate && (
         <ReportDialog
           open={reportOpen}
           reporterId={user.id}
