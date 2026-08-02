@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Bookmark, ChevronLeft, ChevronRight, Flag, Heart, LoaderCircle, Lock, MapPin, Share2, UserPlus, UserRoundCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Bookmark, ChevronLeft, ChevronRight, Flag, Heart, LoaderCircle, Lock, MapPin, Share2, UserPlus, UserRoundCheck, X } from 'lucide-react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { CommentSection } from '@/components/CommentSection'
-import { NoteCard } from '@/components/NoteCard'
 import { ReportDialog } from '@/components/ReportDialog'
 import { useAuth } from '@/context/AuthContext'
 import { normalizeContentSource, recordAttributedContentEvent } from '@/services/attribution'
 import { toggleFavorite, toggleLike } from '@/services/notes'
-import { fetchFollowState, fetchNoteById, fetchRelatedNotes, toggleFollow } from '@/services/social'
+import { fetchFollowState, fetchNoteById, toggleFollow } from '@/services/social'
 import type { Note } from '@/types'
 
 function formatDate(value: string) {
@@ -20,7 +19,6 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const location = useLocation()
   const { user } = useAuth()
   const [note, setNote] = useState<Note | null>(null)
-  const [related, setRelated] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -35,13 +33,17 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
   const trackPublicNote = useRef(false)
   const source = normalizeContentSource((location.state as { source?: unknown } | null)?.source)
 
+  const closeDetail = useCallback(() => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate('/', { replace: true })
+  }, [navigate])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError('')
     setNotice('')
     setImageIndex(0)
-    setRelated([])
     trackPublicNote.current = false
 
     fetchNoteById(noteId, user?.id).then(async (nextNote) => {
@@ -55,8 +57,6 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
       trackPublicNote.current = nextNote.visibility === 'public'
 
       if (nextNote.visibility === 'public') {
-        const nextRelated = await fetchRelatedNotes(noteId, user?.id, 10)
-        if (!cancelled) setRelated(nextRelated)
         if (user && user.id !== nextNote.author_id) {
           const nextFollowing = await fetchFollowState(user.id, nextNote.author_id)
           if (!cancelled) setFollowing(nextFollowing)
@@ -85,6 +85,28 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     if (!values.length && note.cover_url) values.push(note.cover_url)
     return Array.from(new Set(values))
   }, [note])
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeDetail()
+      } else if (event.key === 'ArrowLeft' && imageIndex > 0) {
+        setImageIndex((value) => value - 1)
+      } else if (event.key === 'ArrowRight' && imageIndex < images.length - 1) {
+        setImageIndex((value) => value + 1)
+      }
+    }
+
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      window.removeEventListener('keydown', handleKey)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [closeDetail, imageIndex, images.length])
 
   async function handleLike() {
     if (!user) return onRequireAuth()
@@ -153,28 +175,34 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
     setReportOpen(true)
   }
 
-  if (loading) return <div className="state-panel note-page-state"><LoaderCircle className="spin" /><span>正在打开笔记…</span></div>
-  if (error && !note) return <div className="state-panel error note-page-state"><p>{error}</p><button onClick={() => navigate(-1)}>返回</button></div>
+  if (loading) {
+    return <div className="state-panel note-page-state-overlay"><LoaderCircle className="spin" /><span>正在打开笔记…</span></div>
+  }
+
+  if (error && !note) {
+    return <div className="state-panel error note-page-state-overlay"><p>{error}</p><button onClick={closeDetail}>返回首页</button></div>
+  }
+
   if (!note) return null
 
   const activeImage = images[imageIndex]
   const isPrivate = note.visibility === 'private'
 
   return (
-    <div className={isPrivate ? 'note-page private-note-page' : 'note-page'}>
-      <button className="note-page-back" onClick={() => navigate(-1)}><ArrowLeft size={18} />返回</button>
-      {error && <p className="page-message error">{error}</p>}
-      {notice && <p className="page-message">{notice}</p>}
+    <div className={isPrivate ? 'note-page private-note-page' : 'note-page'} onMouseDown={closeDetail}>
+      <button className="note-page-back" onClick={closeDetail} aria-label="关闭笔记详情"><X size={20} /><span>关闭</span></button>
+      {error && <p className="page-message error note-page-toast">{error}</p>}
+      {notice && <p className="page-message note-page-toast">{notice}</p>}
 
-      <section className="note-page-shell">
+      <section className="note-page-shell" onMouseDown={(event) => event.stopPropagation()}>
         <div className="note-page-gallery">
           <div className="note-page-image-stage">
-            {activeImage ? <img src={activeImage} alt={note.title} /> : <div className="cover-placeholder" />}
+            {activeImage ? <img src={activeImage} alt={note.title} decoding="async" /> : <div className="cover-placeholder" />}
             {isPrivate && <span className="private-gallery-badge"><Lock size={14} />私密图片</span>}
             {images.length > 1 && (
               <>
-                <button className="gallery-arrow gallery-left" disabled={imageIndex === 0} onClick={() => setImageIndex((value) => value - 1)}><ChevronLeft /></button>
-                <button className="gallery-arrow gallery-right" disabled={imageIndex === images.length - 1} onClick={() => setImageIndex((value) => value + 1)}><ChevronRight /></button>
+                <button className="gallery-arrow gallery-left" disabled={imageIndex === 0} onClick={() => setImageIndex((value) => value - 1)} aria-label="上一张"><ChevronLeft /></button>
+                <button className="gallery-arrow gallery-right" disabled={imageIndex === images.length - 1} onClick={() => setImageIndex((value) => value + 1)} aria-label="下一张"><ChevronRight /></button>
                 <span className="gallery-counter">{imageIndex + 1} / {images.length}</span>
               </>
             )}
@@ -182,71 +210,62 @@ export function NotePage({ onRequireAuth }: { onRequireAuth: () => void }) {
           {images.length > 1 && (
             <div className="gallery-thumbnails">
               {images.map((image, index) => (
-                <button key={image} className={imageIndex === index ? 'active' : ''} onClick={() => setImageIndex(index)}><img src={image} alt="" /></button>
+                <button key={image} className={imageIndex === index ? 'active' : ''} onClick={() => setImageIndex(index)} aria-label={`查看第 ${index + 1} 张图片`}><img src={image} alt="" loading="lazy" decoding="async" /></button>
               ))}
             </div>
           )}
         </div>
 
         <div className="note-page-body">
-          <header className="note-author-header">
-            <button className="note-author-profile" onClick={() => navigate(`/user/${note.author.username}`)}>
-              {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
-              <div><strong>{note.author.display_name}</strong><small>@{note.author.username}</small></div>
-            </button>
-            {!isPrivate && user?.id !== note.author_id && (
-              <button className={following ? 'follow-button following' : 'follow-button'} disabled={busyFollow} onClick={() => void handleFollow()}>
-                {following ? <UserRoundCheck size={16} /> : <UserPlus size={16} />}{following ? '已关注' : '关注'}
+          <div className="note-page-scroll">
+            <header className="note-author-header">
+              <button className="note-author-profile" onClick={() => navigate(`/user/${note.author.username}`)}>
+                {note.author.avatar_url ? <img src={note.author.avatar_url} alt="" decoding="async" /> : <span>{note.author.display_name.slice(0, 1)}</span>}
+                <div><strong>{note.author.display_name}</strong><small>@{note.author.username}</small></div>
               </button>
-            )}
-          </header>
+              {!isPrivate && user?.id !== note.author_id && (
+                <button className={following ? 'follow-button following' : 'follow-button'} disabled={busyFollow} onClick={() => void handleFollow()}>
+                  {following ? <UserRoundCheck size={16} /> : <UserPlus size={16} />}{following ? '已关注' : '关注'}
+                </button>
+              )}
+            </header>
 
-          <article className="note-page-copy">
-            {isPrivate && <span className="private-title-badge"><Lock size={14} />仅自己可见</span>}
-            <h1>{note.title}</h1>
-            <p>{note.content}</p>
-            <div className="detail-tags">
-              {note.tags.map((tag) => (
-                <button key={tag} disabled={isPrivate} onClick={() => navigate(`/search?q=${encodeURIComponent(tag)}&type=note`)}>#{tag}</button>
-              ))}
-            </div>
-            <div className="detail-meta">
-              <time>{formatDate(note.created_at)}</time>
-              {note.location && <span><MapPin size={14} />{note.location}</span>}
-              {!isPrivate && <span>{note.view_count ?? 0} 次浏览</span>}
-            </div>
-          </article>
-
-          {isPrivate ? (
-            <div className="private-note-notice">
-              <Lock size={20} />
-              <div><strong>这是一篇私密笔记</strong><span>只有当前账号可以读取正文和图片，不会进入推荐、搜索、公开主页或社交互动。</span></div>
-            </div>
-          ) : (
-            <>
-              <div className="note-page-actions">
-                <button className={liked ? 'active' : ''} onClick={() => void handleLike()}><Heart size={21} fill={liked ? 'currentColor' : 'none'} />{likeCount}</button>
-                <button className={favorited ? 'active' : ''} onClick={() => void handleFavorite()}><Bookmark size={21} fill={favorited ? 'currentColor' : 'none'} />{favorited ? '已收藏' : '收藏'}</button>
-                <button onClick={() => void share()}><Share2 size={21} />分享</button>
-                <button onClick={openReport}><Flag size={19} />举报</button>
+            <article className="note-page-copy">
+              {isPrivate && <span className="private-title-badge"><Lock size={14} />仅自己可见</span>}
+              <h1>{note.title}</h1>
+              <p>{note.content}</p>
+              <div className="detail-tags">
+                {note.tags.map((tag) => (
+                  <button key={tag} disabled={isPrivate} onClick={() => navigate(`/topic/${encodeURIComponent(tag)}`)}>#{tag}</button>
+                ))}
               </div>
+              <div className="detail-meta">
+                <time>{formatDate(note.created_at)}</time>
+                {note.location && <span><MapPin size={14} />{note.location}</span>}
+                {!isPrivate && <span>{note.view_count ?? 0} 次浏览</span>}
+              </div>
+            </article>
 
+            {isPrivate ? (
+              <div className="private-note-notice">
+                <Lock size={20} />
+                <div><strong>这是一篇私密笔记</strong><span>只有当前账号可以读取正文和图片，不会进入推荐、搜索、公开主页或社交互动。</span></div>
+              </div>
+            ) : (
               <CommentSection noteId={note.id} userId={user?.id} onRequireAuth={onRequireAuth} onCountChange={(count) => setNote((value) => value ? { ...value, comment_count: count } : value)} />
-            </>
+            )}
+          </div>
+
+          {!isPrivate && (
+            <div className="note-page-actions">
+              <button className={liked ? 'active' : ''} onClick={() => void handleLike()}><Heart size={20} fill={liked ? 'currentColor' : 'none'} />{likeCount}</button>
+              <button className={favorited ? 'active' : ''} onClick={() => void handleFavorite()}><Bookmark size={20} fill={favorited ? 'currentColor' : 'none'} />{favorited ? '已收藏' : '收藏'}</button>
+              <button onClick={() => void share()}><Share2 size={20} />分享</button>
+              <button onClick={openReport}><Flag size={18} />举报</button>
+            </div>
           )}
         </div>
       </section>
-
-      {!isPrivate && related.length > 0 && (
-        <section className="related-section">
-          <header><div><p>MORE FOR YOU</p><h2>你可能还喜欢</h2></div><span>基于话题、作者与互动热度推荐</span></header>
-          <div className="related-grid">
-            {related.map((item) => (
-              <NoteCard key={item.id} note={item} userId={user?.id} onRequireAuth={onRequireAuth} onOpen={(selected) => navigate(`/note/${selected.id}`, { state: { source: 'related' } })} />
-            ))}
-          </div>
-        </section>
-      )}
 
       {user && !isPrivate && (
         <ReportDialog
