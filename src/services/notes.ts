@@ -1,6 +1,6 @@
 import { demoNotes } from '@/data/demo'
 import { supabase } from '@/lib/supabase'
-import { hydrateNotes, noteSelect } from '@/services/noteHydration'
+import { fetchNotesByIds, invalidateNoteDetailCache } from '@/services/social'
 import type { CommentItem, Note, NoteVisibility, Profile } from '@/types'
 
 type FeedOptions = {
@@ -30,7 +30,7 @@ export async function fetchFeed(options: FeedOptions = {}): Promise<Note[]> {
   const db = supabase as any
   let request = db
     .from('notes')
-    .select(noteSelect)
+    .select('id')
     .eq('status', 'published')
     .eq('is_hidden', false)
     .eq('visibility', 'public')
@@ -45,22 +45,7 @@ export async function fetchFeed(options: FeedOptions = {}): Promise<Note[]> {
 
   const { data, error } = await request
   if (error) throw error
-  return hydrateNotes(data ?? [], options.viewerId)
-}
-
-async function fetchNotesByIds(ids: string[], viewerId?: string) {
-  if (!supabase || ids.length === 0) return []
-  const db = supabase as any
-  const { data, error } = await db
-    .from('notes')
-    .select(noteSelect)
-    .in('id', ids)
-    .eq('status', 'published')
-    .eq('is_hidden', false)
-  if (error) throw error
-  const hydrated = await hydrateNotes(data ?? [], viewerId)
-  const order = new Map(ids.map((id, index) => [id, index]))
-  return hydrated.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  return fetchNotesByIds((data ?? []).map((row: any) => row.id), options.viewerId)
 }
 
 export async function fetchUserCollection(userId: string, kind: CollectionKind): Promise<Note[]> {
@@ -70,13 +55,13 @@ export async function fetchUserCollection(userId: string, kind: CollectionKind):
   if (kind === 'notes' || kind === 'private') {
     const { data, error } = await db
       .from('notes')
-      .select(noteSelect)
+      .select('id')
       .eq('author_id', userId)
       .eq('status', 'published')
       .eq('visibility', kind === 'private' ? 'private' : 'public')
       .order('created_at', { ascending: false })
     if (error) throw error
-    return hydrateNotes(data ?? [], userId)
+    return fetchNotesByIds((data ?? []).map((row: any) => row.id), userId)
   }
 
   const table = kind === 'favorites' ? 'favorites' : 'likes'
@@ -126,6 +111,7 @@ export async function addComment(input: { noteId: string; authorId: string; cont
     .select('id')
     .single()
   if (error) throw error
+  invalidateNoteDetailCache(input.noteId)
   return data.id as string
 }
 
@@ -177,6 +163,7 @@ export async function toggleLike(noteId: string, userId: string, active: boolean
     const { error } = await db.from('likes').insert({ note_id: noteId, user_id: userId })
     if (error) throw error
   }
+  invalidateNoteDetailCache(noteId)
 }
 
 export async function toggleFavorite(noteId: string, userId: string, active: boolean) {
@@ -189,6 +176,7 @@ export async function toggleFavorite(noteId: string, userId: string, active: boo
     const { error } = await db.from('favorites').insert({ note_id: noteId, user_id: userId })
     if (error) throw error
   }
+  invalidateNoteDetailCache(noteId)
 }
 
 export async function publishNote(input: {
@@ -240,6 +228,7 @@ export async function publishNote(input: {
       const { error: coverError } = await db.from('notes').update({ cover_url: mediaRows[0].storage_path }).eq('id', note.id)
       if (coverError) throw coverError
     }
+    invalidateNoteDetailCache(note.id)
     return note.id as string
   } catch (error) {
     await db.from('notes').delete().eq('id', note.id)
