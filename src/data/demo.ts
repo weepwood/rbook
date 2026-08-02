@@ -135,6 +135,7 @@ export const demoNotes: Note[] = raw.map((item, index) => ({
   tags: item.tags,
   location: authors[item.author].location,
   cover_url: item.cover,
+  visibility: 'public',
   created_at: new Date(Date.now() - index * 1000 * 60 * 60 * 7).toISOString(),
   author: authors[item.author],
   media: [
@@ -142,6 +143,7 @@ export const demoNotes: Note[] = raw.map((item, index) => ({
       id: `demo-media-${index + 1}`,
       note_id: `demo-note-${index + 1}`,
       storage_path: '',
+      storage_bucket: 'note-media',
       public_url: item.cover,
       width: item.ratio[0] * 200,
       height: item.ratio[1] * 200,
